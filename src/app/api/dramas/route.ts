@@ -28,8 +28,13 @@ export async function GET() {
 
     return NextResponse.json({ dramas: result });
   } catch (error) {
-    console.error('Failed to list dramas:', error);
-    return NextResponse.json({ error: 'Failed to list dramas' }, { status: 500 });
+    const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : '';
+    console.error('Failed to list dramas:', message, stack);
+    return NextResponse.json(
+      { error: 'Failed to list dramas', detail: message },
+      { status: 500 }
+    );
   }
 }
 
@@ -54,7 +59,11 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(drama, { status: 201 });
   } catch (error) {
-    console.error('Failed to create drama:', error);
-    return NextResponse.json({ error: 'Failed to create drama' }, { status: 500 });
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('Failed to create drama:', message);
+    return NextResponse.json(
+      { error: 'Failed to create drama', detail: message },
+      { status: 500 }
+    );
   }
 }

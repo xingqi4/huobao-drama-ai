@@ -15,11 +15,11 @@ const developmentSchemaPath = path.join(__dirname, '..', 'prisma', 'schema.devel
 function getPostgresUrl() {
   return (
     process.env.DATABASE_URL ||
-    process.env.POSTGRES_PRISMA_URL ||
     process.env.POSTGRES_URL_NON_POOLING ||
-    process.env.POSTGRES_URL ||
-    process.env.huobao_POSTGRES_PRISMA_URL ||
     process.env.huobao_POSTGRES_URL_NON_POOLING ||
+    process.env.POSTGRES_PRISMA_URL ||
+    process.env.huobao_POSTGRES_PRISMA_URL ||
+    process.env.POSTGRES_URL ||
     process.env.huobao_POSTGRES_URL ||
     null
   )
@@ -29,12 +29,23 @@ const hasPostgres = !!getPostgresUrl()
 
 if (hasPostgres) {
   console.log('[postinstall] PostgreSQL detected, using production schema...')
-  
+
   // Set DATABASE_URL from Vercel Postgres env vars
-  const pgUrl = getPostgresUrl()
-  process.env.DATABASE_URL = pgUrl
+  // Priority: non-pooling URL first
+  const pgUrl =
+    process.env.POSTGRES_URL_NON_POOLING ||
+    process.env.huobao_POSTGRES_URL_NON_POOLING ||
+    process.env.DATABASE_URL ||
+    process.env.POSTGRES_PRISMA_URL ||
+    process.env.huobao_POSTGRES_PRISMA_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.huobao_POSTGRES_URL
+
+  if (!process.env.DATABASE_URL || process.env.DATABASE_URL.trim() === '') {
+    process.env.DATABASE_URL = pgUrl
+  }
   console.log('[postinstall] Set DATABASE_URL from Vercel Postgres')
-  
+
   // Backup the development schema if it doesn't exist
   if (!fs.existsSync(developmentSchemaPath) && fs.existsSync(schemaPath)) {
     const currentSchema = fs.readFileSync(schemaPath, 'utf8')
@@ -43,7 +54,7 @@ if (hasPostgres) {
       console.log('[postinstall] Backed up SQLite schema to schema.development.prisma')
     }
   }
-  
+
   // Copy production schema (PostgreSQL) over the default schema
   if (fs.existsSync(productionSchemaPath)) {
     fs.copyFileSync(productionSchemaPath, schemaPath)
@@ -54,7 +65,7 @@ if (hasPostgres) {
 // Generate Prisma client - with timeout to prevent hanging
 try {
   console.log('[postinstall] Generating Prisma client...')
-  execSync('npx prisma generate', { 
+  execSync('npx prisma generate', {
     stdio: 'inherit',
     env: { ...process.env },
     timeout: 60000  // 60 second timeout
