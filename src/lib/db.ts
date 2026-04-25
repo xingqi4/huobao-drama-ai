@@ -264,16 +264,10 @@ function getMigrationSQL(): string[] {
     `ALTER TABLE "Character" ADD CONSTRAINT "Character_dramaId_fkey" FOREIGN KEY ("dramaId") REFERENCES "Drama"("id") ON DELETE CASCADE ON UPDATE CASCADE`,
     `ALTER TABLE "Scene" ADD CONSTRAINT "Scene_dramaId_fkey" FOREIGN KEY ("dramaId") REFERENCES "Drama"("id") ON DELETE CASCADE ON UPDATE CASCADE`,
     `ALTER TABLE "Storyboard" ADD CONSTRAINT "Storyboard_episodeId_fkey" FOREIGN KEY ("episodeId") REFERENCES "Episode"("id") ON DELETE CASCADE ON UPDATE CASCADE`,
-
-    // Create trigger function for auto-updating updatedAt
-    `CREATE OR REPLACE FUNCTION "update_updated_at_column"()
-     RETURNS TRIGGER AS $$
-     BEGIN
-       NEW."updatedAt" = CURRENT_TIMESTAMP;
-       RETURN NEW;
-     END;
-     $$ LANGUAGE plpgsql`,
   ]
+  // Note: updatedAt trigger is NOT created here because the $$ syntax
+  // doesn't work with $executeRawUnsafe. Prisma Client handles updatedAt
+  // in its own client-side logic, so the trigger is not strictly needed.
 }
 
 // Test database connection on startup (non-blocking)

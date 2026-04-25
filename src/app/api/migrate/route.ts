@@ -181,28 +181,35 @@ export async function POST() {
 
     // Step 5: Add updatedAt trigger for auto-updating on row change
     // PostgreSQL doesn't auto-update updatedAt like Prisma expects, so we need a trigger
-    const triggerFn = `
-      CREATE OR REPLACE FUNCTION "update_updated_at_column"()
-      RETURNS TRIGGER AS $$
-      BEGIN
-        NEW."updatedAt" = CURRENT_TIMESTAMP;
-        RETURN NEW;
-      END;
-      $$ LANGUAGE plpgsql;
-    `
-    await db.$executeRawUnsafe(triggerFn)
+    // Use $executeRaw with tagged template to handle the $$ syntax properly
+    try {
+      await db.$executeRaw`
+        CREATE OR REPLACE FUNCTION "update_updated_at_column"()
+        RETURNS TRIGGER AS $$
+        BEGIN
+          NEW."updatedAt" = CURRENT_TIMESTAMP;
+          RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql
+      `
 
-    const tables = ['Drama', 'Episode', 'Character', 'Scene', 'Storyboard', 'AiProvider']
-    for (const table of tables) {
-      await db.$executeRawUnsafe(`
-        DROP TRIGGER IF EXISTS "update_${table}_updatedAt" ON "${table}";
-        CREATE TRIGGER "update_${table}_updatedAt"
-          BEFORE UPDATE ON "${table}"
-          FOR EACH ROW
-          EXECUTE FUNCTION "update_updated_at_column"();
-      `)
+      const tables = ['Drama', 'Episode', 'Character', 'Scene', 'Storyboard', 'AiProvider']
+      for (const table of tables) {
+        await db.$executeRawUnsafe(`
+          DROP TRIGGER IF EXISTS "update_${table}_updatedAt" ON "${table}"
+        `)
+        await db.$executeRawUnsafe(`
+          CREATE TRIGGER "update_${table}_updatedAt"
+            BEFORE UPDATE ON "${table}"
+            FOR EACH ROW
+            EXECUTE FUNCTION "update_updated_at_column"()
+        `)
+      }
+      results.triggers = 'created'
+    } catch (triggerError) {
+      // Triggers are non-critical - Prisma handles updatedAt in its client
+      results.triggers = `skipped: ${triggerError instanceof Error ? triggerError.message : String(triggerError)}`
     }
-    results.triggers = 'created'
 
     console.log('[migrate] Database migration completed successfully')
 
