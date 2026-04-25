@@ -535,9 +535,10 @@ export const aiClient = {
   ): Promise<string> {
     // Use z-ai-sdk if provider is z-ai-sdk
     if (provider.provider === 'z-ai-sdk') {
-      const { imageGeneration } = await import('z-ai-web-dev-sdk')
+      const ZAI = (await import('z-ai-web-dev-sdk')).default
+      const client = await ZAI.create()
       const sizeStr = options?.size ?? '1024x1024'
-      const result = await imageGeneration({
+      const result = await client.images.generations.create({
         model: provider.model || 'dall-e-3',
         prompt,
         n: 1,
@@ -545,10 +546,12 @@ export const aiClient = {
         response_format: 'b64_json',
       })
       const imageData = result?.data?.[0]
-      if (!imageData?.b64_json) {
+      // z-ai-sdk returns base64 in 'base64' field, not 'b64_json'
+      const base64 = imageData?.base64 || imageData?.b64_json
+      if (!base64) {
         throw new Error('z-ai-web-dev-sdk image generation returned no data')
       }
-      return imageData.b64_json
+      return base64
     }
 
     // OpenAI-compatible endpoint
