@@ -132,3 +132,33 @@ Stage Summary:
 - Platform fully functional with end-to-end AI workflow
 - Dark cinema theme applied globally
 - All API routes returning properly formatted responses
+
+---
+Task ID: 11
+Agent: Main Orchestrator
+Task: Integrate NVIDIA NIM API and deploy to Vercel
+
+Work Log:
+- Created src/lib/nvidia.ts - Full NVIDIA NIM API client (chat completions, image generation, JSON parsing, retry logic)
+- Created src/lib/ai-config.ts - AI service configuration with unified client (aiClient) and Chinese system prompts
+- Updated all 5 AI routes to use aiClient instead of direct z-ai-web-dev-sdk
+- Created 4 new API routes: generate-video, generate-tts, test-connection, settings
+- Created settings-view.tsx with API configuration, model selection, and connection testing
+- Updated store.ts with settings navigation
+- Updated project-list.tsx with settings button
+- Updated episode-workspace.tsx with video/TTS generation buttons and players
+- Updated api.ts with new AI endpoints and settings API
+- Switched from filesystem image storage to data URLs for Vercel compatibility
+- Added Chinese system prompts for all AI tasks (rewrite, extract, storyboard, creative)
+- Added .env.example with configuration documentation
+- Created comprehensive README.md
+- Pushed code to https://github.com/dav-niu474/huobao-drama-ai.git
+- Deployed to Vercel at https://huobao-drama-ai.vercel.app
+- Added NVIDIA_API_KEY environment variable to Vercel production
+
+Stage Summary:
+- NVIDIA NIM API fully integrated for LLM (Llama 3.1 405B/70B, Mixtral 8x22B, Nemotron 70B) and image generation (SDXL)
+- z-ai-web-dev-sdk retained for video generation and TTS (NVIDIA doesn't provide these)
+- Vercel deployment successful with NVIDIA_API_KEY environment variable
+- Production URL: https://huobao-drama-ai.vercel.app
+- GitHub repo: https://github.com/dav-niu474/huobao-drama-ai
