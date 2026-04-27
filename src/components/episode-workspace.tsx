@@ -52,7 +52,7 @@ import {
 
 // ── Types ────────────────────────────────────────────────────
 
-type StepKey = 'raw' | 'rewrite' | 'extract' | 'storyboard' | 'production'
+type StepKey = 'raw' | 'rewrite' | 'extract' | 'voice' | 'storyboard' | 'production'
 
 interface StepDef {
   key: StepKey
@@ -77,6 +77,11 @@ const STEPS: StepDef[] = [
     key: 'extract',
     label: '提取',
     icon: <Users className="size-4" />,
+  },
+  {
+    key: 'voice',
+    label: '音色',
+    icon: <Mic className="size-4" />,
   },
   {
     key: 'storyboard',
@@ -214,6 +219,8 @@ export function EpisodeWorkspace() {
           return !!scriptContent.trim()
         case 'extract':
           return characters.length > 0 || scenes.length > 0
+        case 'voice':
+          return characters.length > 0 && characters.some((c) => c.voiceId)
         case 'storyboard':
           return storyboards.length > 0
         case 'production':
@@ -266,13 +273,22 @@ export function EpisodeWorkspace() {
     }
   }
 
-  // ── AI: Rewrite script ─────────────────────────────────────
+  // ── AI: Rewrite script (via Agent) ──────────────────────────
 
   const handleRewrite = async () => {
-    if (!selectedEpisodeId) return
+    if (!selectedEpisodeId || !selectedDramaId) return
     setAiLoading(true)
+    setGenerationProgress({ step: 'starting', message: '剧本改写专家开始工作...', progress: 10 })
     try {
-      await api.ai.rewriteScript(selectedEpisodeId)
+      await api.ai.agentStream(
+        'script_rewriter',
+        selectedEpisodeId,
+        selectedDramaId,
+        '请将原始内容改写为标准剧本格式，使用read_episode_script工具读取内容，改写后用save_script工具保存。',
+        (data) => {
+          setGenerationProgress({ step: data.step, message: data.message, progress: Math.min(90, 10 + (data.step === 'tool_result' ? 30 : 10)) })
+        }
+      )
       toast({ title: '剧本改写完成' })
       await fetchEpisode()
       setActiveStep('rewrite')
@@ -280,6 +296,7 @@ export function EpisodeWorkspace() {
       toast({ title: '改写失败', description: String(err), variant: 'destructive' })
     } finally {
       setAiLoading(false)
+      setGenerationProgress(null)
     }
   }
 
@@ -300,18 +317,20 @@ export function EpisodeWorkspace() {
     }
   }
 
-  // ── AI: Extract ────────────────────────────────────────────
+  // ── AI: Extract (via Agent) ─────────────────────────────────
 
   const handleExtract = async () => {
     if (!selectedEpisodeId || !selectedDramaId) return
     setAiLoading(true)
-    setGenerationProgress({ step: 'starting', message: '开始提取...', progress: 0 })
+    setGenerationProgress({ step: 'starting', message: '角色场景提取器开始工作...', progress: 10 })
     try {
-      await api.ai.extractStream(
+      await api.ai.agentStream(
+        'extractor',
         selectedEpisodeId,
         selectedDramaId,
+        '请从剧本中提取所有角色和场景信息。先使用read_script_for_extraction读取剧本，再使用read_existing_characters和read_existing_scenes查看已有数据，最后用save_characters和save_scenes保存提取结果（注意去重）。',
         (data) => {
-          setGenerationProgress({ step: data.step, message: data.message, progress: data.progress })
+          setGenerationProgress({ step: data.step, message: data.message, progress: Math.min(90, 10 + (data.step === 'tool_result' ? 20 : 5)) })
         }
       )
       toast({ title: '角色与场景提取完成' })
@@ -324,17 +343,46 @@ export function EpisodeWorkspace() {
     }
   }
 
-  // ── AI: Generate storyboard ────────────────────────────────
+  // ── AI: Voice assign (via Agent) ─────────────────────────────
+
+  const handleVoiceAssign = async () => {
+    if (!selectedEpisodeId || !selectedDramaId) return
+    setAiLoading(true)
+    setGenerationProgress({ step: 'starting', message: '音色分配师开始工作...', progress: 10 })
+    try {
+      await api.ai.agentStream(
+        'voice_assigner',
+        selectedEpisodeId,
+        selectedDramaId,
+        '请为所有角色分配合适的TTS音色。先使用get_characters获取角色列表，使用list_available_voices获取可用音色，然后根据角色性别、年龄、性格特征为每个角色分配最合适的音色。',
+        (data) => {
+          setGenerationProgress({ step: data.step, message: data.message, progress: Math.min(90, 10 + (data.step === 'tool_result' ? 20 : 5)) })
+        }
+      )
+      toast({ title: '音色分配完成' })
+      await fetchEpisode()
+    } catch (err) {
+      toast({ title: '音色分配失败', description: String(err), variant: 'destructive' })
+    } finally {
+      setAiLoading(false)
+      setGenerationProgress(null)
+    }
+  }
+
+  // ── AI: Generate storyboard (via Agent) ──────────────────────
 
   const handleGenerateStoryboard = async () => {
-    if (!selectedEpisodeId) return
+    if (!selectedEpisodeId || !selectedDramaId) return
     setAiLoading(true)
-    setGenerationProgress({ step: 'starting', message: '开始生成分镜...', progress: 0 })
+    setGenerationProgress({ step: 'starting', message: '分镜拆解专家开始工作...', progress: 10 })
     try {
-      await api.ai.generateStoryboardStream(
+      await api.ai.agentStream(
+        'storyboard_breaker',
         selectedEpisodeId,
+        selectedDramaId,
+        '请将剧本拆解为分镜序列。先使用read_storyboard_context读取剧本、角色和场景信息，然后为每个镜头生成完整的分镜数据（包含imagePrompt和videoPrompt），最后用save_storyboards保存所有分镜。',
         (data) => {
-          setGenerationProgress({ step: data.step, message: data.message, progress: data.progress })
+          setGenerationProgress({ step: data.step, message: data.message, progress: Math.min(90, 10 + (data.step === 'tool_result' ? 20 : 5)) })
         }
       )
       toast({ title: '分镜生成完成' })
@@ -1423,6 +1471,144 @@ export function EpisodeWorkspace() {
     )
   }
 
+  // ── Render panel: Voice Assignment ──────────────────────────
+
+  const renderVoicePanel = () => {
+    const hasVoices = characters.some((c) => c.voiceId)
+
+    // Empty state - no characters yet
+    if (characters.length === 0 && !aiLoading) {
+      return (
+        <div className="flex-1 flex items-center justify-center p-6">
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-center max-w-md"
+          >
+            <div className="mx-auto size-16 rounded-full bg-primary/10 flex items-center justify-center mb-5">
+              <Mic className="size-8 text-primary" />
+            </div>
+            <h2 className="text-lg font-semibold mb-2">音色分配</h2>
+            <p className="text-sm text-muted-foreground mb-6">
+              请先完成角色提取，AI将为每个角色分配合适的TTS音色
+            </p>
+            <p className="text-xs text-muted-foreground">请先在「提取」步骤中完成角色提取</p>
+          </motion.div>
+        </div>
+      )
+    }
+
+    // Loading state
+    if (aiLoading && activeStep === 'voice') {
+      return (
+        <div className="flex-1 flex items-center justify-center p-6">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="text-center w-full max-w-sm"
+          >
+            <Loader2 className="size-10 text-primary animate-spin mx-auto mb-4" />
+            <h2 className="text-lg font-semibold mb-1">正在分配音色...</h2>
+            {generationProgress ? (
+              <>
+                <p className="text-sm text-muted-foreground mb-3">{generationProgress.message}</p>
+                <Progress value={generationProgress.progress} className="h-2 mb-1" />
+                <p className="text-xs text-muted-foreground">{generationProgress.progress}%</p>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">AI正在根据角色特征分配音色</p>
+            )}
+          </motion.div>
+        </div>
+      )
+    }
+
+    // Content exists
+    return (
+      <div className="flex flex-col h-full">
+        <div className="flex items-center justify-between px-6 py-3 border-b border-border/50">
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-mono text-primary/80">04</span>
+            <h2 className="text-sm font-semibold">音色分配</h2>
+            {hasVoices && <Badge className="status-completed text-[10px] px-1.5 py-0">已分配</Badge>}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              onClick={handleVoiceAssign}
+              disabled={aiLoading || characters.length === 0}
+              className="amber-glow"
+            >
+              <Sparkles className="size-3.5" />
+              AI分配音色
+            </Button>
+          </div>
+        </div>
+
+        <ScrollArea className="flex-1">
+          <div className="p-6 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {characters.map((char) => (
+                <Card key={char.id} className="border-border/50">
+                  <CardContent className="p-4">
+                    <div className="flex items-start gap-3">
+                      {/* Character avatar */}
+                      <div className="size-12 rounded-full bg-muted flex items-center justify-center overflow-hidden shrink-0">
+                        {char.imageUrl ? (
+                          <img src={char.imageUrl} alt={char.name} className="size-full object-cover" />
+                        ) : (
+                          <UserCircle className="size-8 text-muted-foreground" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-medium text-sm">{char.name}</span>
+                          <Badge variant="outline" className="text-[10px] px-1 py-0">
+                            {char.gender === 'male' ? '男' : char.gender === 'female' ? '女' : '未知'}
+                          </Badge>
+                          {char.role && (
+                            <Badge variant="outline" className="text-[10px] px-1 py-0">
+                              {char.role === 'protagonist' ? '主角' : char.role === 'antagonist' ? '反派' : char.role === 'supporting' ? '配角' : '龙套'}
+                            </Badge>
+                          )}
+                        </div>
+                        {char.personality && (
+                          <p className="text-xs text-muted-foreground mb-2 truncate">{char.personality}</p>
+                        )}
+                        <div className="flex items-center gap-2">
+                          {char.voiceId ? (
+                            <div className="flex items-center gap-1.5 text-xs text-green-600">
+                              <Mic className="size-3" />
+                              <span>已分配: {char.voiceId}</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                              <Mic className="size-3" />
+                              <span>未分配</span>
+                            </div>
+                          )}
+                          {char.voiceStyle && (
+                            <span className="text-xs text-muted-foreground">· {char.voiceStyle}</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            {characters.length === 0 && (
+              <div className="text-center py-8 text-muted-foreground text-sm">
+                暂无角色数据，请先完成角色提取
+              </div>
+            )}
+          </div>
+        </ScrollArea>
+      </div>
+    )
+  }
+
   // ── Render panel: Storyboard ───────────────────────────────
 
   const renderStoryboardPanel = () => {
@@ -2336,6 +2522,8 @@ export function EpisodeWorkspace() {
         return renderRewritePanel()
       case 'extract':
         return renderExtractPanel()
+      case 'voice':
+        return renderVoicePanel()
       case 'storyboard':
         return renderStoryboardPanel()
       case 'production':

@@ -473,6 +473,100 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ category: category || 'llm' }),
       }),
+
+    // ---- Agent API ----
+
+    // Agent execution with SSE streaming
+    agentStream: (
+      agentType: string,
+      episodeId: string,
+      dramaId: string,
+      message: string,
+      onProgress: (data: { step: string; message: string; [key: string]: unknown }) => void,
+    ): Promise<{ text: string; toolCalls: unknown[]; steps: number }> => {
+      return new Promise((resolve, reject) => {
+        fetch(`/api/agent/${agentType}/stream`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ episodeId, dramaId, message }),
+        }).then(async (res) => {
+          if (!res.ok) {
+            const text = await res.text().catch(() => 'Unknown error')
+            reject(new Error(`API ${res.status}: ${text}`))
+            return
+          }
+
+          const reader = res.body?.getReader()
+          if (!reader) {
+            reject(new Error('No readable stream'))
+            return
+          }
+
+          const decoder = new TextDecoder()
+          let buffer = ''
+          let lastResult: { text: string; toolCalls: unknown[]; steps: number } | null = null
+
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split('\n')
+            buffer = lines.pop() || ''
+
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                try {
+                  const data = JSON.parse(line.slice(6))
+                  if (data.step === 'error') {
+                    reject(new Error(data.message))
+                    return
+                  }
+                  if (data.step === 'completed') {
+                    lastResult = {
+                      text: data.text || '',
+                      toolCalls: data.toolCalls || [],
+                      steps: data.steps || 0,
+                    }
+                  }
+                  onProgress(data)
+                } catch {
+                  // ignore parse errors
+                }
+              }
+            }
+          }
+
+          if (lastResult) {
+            resolve(lastResult)
+          } else {
+            reject(new Error('Stream ended without result'))
+          }
+        }).catch(reject)
+      })
+    },
+
+    // Agent execution (non-streaming, simple request)
+    agentExecute: (agentType: string, episodeId: string, dramaId: string, message: string) =>
+      request<{ agentType: string; name: string; text: string; toolCalls: unknown[]; steps: number }>(
+        `/api/agent/${agentType}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ episodeId, dramaId, message }),
+        }
+      ),
+
+    // Get agent config
+    agentGetConfig: (agentType: string) =>
+      request<{
+        agentType: string
+        name: string
+        description: string
+        config: { systemPrompt: string; model: string | null; temperature: number; maxTokens: number; isActive: boolean }
+        hasSkill: boolean
+        skillPreview: string | null
+      }>(`/api/agent/${agentType}`),
   },
 
   // ---- Settings ----
