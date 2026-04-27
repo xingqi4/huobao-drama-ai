@@ -815,19 +815,33 @@ export const aiClient = {
 
   async generateCharacterPortrait(
     description: string,
-    style?: string
+    style?: string,
+    characterName?: string,
+    personality?: string
   ): Promise<string> {
+    // Production-quality character portrait prompt with 6+ dimensions
+    // Based on grid_prompt_generator SKILL methodology
+    const styleTag = style || 'cinematic'
+    const personalityExpression = personality
+      ? `expressing ${personality} personality,`
+      : ''
+
     const portraitPrompt = [
-      'Cinematic character portrait, high detail, dramatic lighting,',
-      style ? `${style} style,` : '',
+      `Professional cinematic character portrait, ${styleTag} aesthetic,`,
+      characterName ? `${characterName} —` : '',
       description,
-      'professional photography, shallow depth of field, 8k quality',
+      personalityExpression,
+      'dramatic Rembrandt lighting with rim light accent,',
+      'rule of thirds composition, centered framing,',
+      'shot on ARRI ALEXA 65, f/1.4 aperture, shallow depth of field,',
+      'ultra-high detail skin texture, 8K resolution, film grain texture,',
+      'character concept art, consistent art style',
     ]
       .filter(Boolean)
       .join(' ')
 
     const negativePrompt =
-      'blurry, low quality, distorted face, extra limbs, deformed, watermark, text'
+      'blurry, low quality, distorted face, extra limbs, deformed, watermark, text, signature, cartoon, anime'
 
     return this.generateImage(portraitPrompt, negativePrompt, {
       width: 1024,
@@ -837,21 +851,79 @@ export const aiClient = {
 
   async generateStoryboardFrame(
     description: string,
-    atmosphere?: string
+    atmosphere?: string,
+    shotType?: string,
+    cameraAngle?: string,
+    style?: string
   ): Promise<string> {
+    // Production-quality storyboard frame prompt with 6+ dimensions
+    const styleTag = style || 'cinematic'
+    const atmosphereTag = atmosphere || 'dramatic'
+    const shotTag = shotType || 'medium shot'
+    const angleTag = cameraAngle || 'eye-level'
+
     const framePrompt = [
-      'Storyboard frame, cinematic composition,',
-      atmosphere ? `${atmosphere} atmosphere,` : '',
+      `Cinematic film still, ${styleTag} visual style,`,
       description,
-      'film still, professional cinematography, high quality',
+      `${atmosphereTag} atmosphere,`,
+      `${shotTag}, ${angleTag} angle,`,
+      'professional cinematography, shallow depth of field,',
+      'shot on RED V-RAPTOR, anamorphic lens,',
+      'professional color grading, warm tones,',
+      '8K, photorealistic, film grain',
     ]
       .filter(Boolean)
       .join(' ')
 
     const negativePrompt =
-      'blurry, low quality, amateur, cartoon, anime, watermark, text overlay'
+      'blurry, low quality, amateur, cartoon, anime, watermark, text overlay, signature'
 
     return this.generateImage(framePrompt, negativePrompt, {
+      width: 1344,
+      height: 768,
+    })
+  },
+
+  async generateSceneImage(
+    location: string,
+    timeOfDay?: string,
+    style?: string,
+    weather?: string
+  ): Promise<string> {
+    // Production-quality scene/establishing shot prompt with 6+ dimensions
+    const styleTag = style || 'cinematic'
+    const timeTag = timeOfDay || 'day'
+    const weatherTag = weather || ''
+
+    // Map time of day to lighting
+    const lightingMap: Record<string, string> = {
+      morning: 'soft warm golden light, sunrise glow',
+      day: 'bright natural daylight, clear sky',
+      afternoon: 'warm afternoon sunlight, long shadows',
+      dusk: 'golden hour warm amber tones, sunset glow',
+      night: 'cool blue moonlight, dark atmosphere',
+      evening: 'warm indoor lighting, soft ambient glow',
+    }
+    const lighting = lightingMap[timeTag.toLowerCase()] || 'natural lighting'
+
+    const scenePrompt = [
+      `Establishing shot, ${styleTag} cinematography,`,
+      `${location},`,
+      `${lighting},`,
+      weatherTag ? `${weatherTag},` : '',
+      'no characters, no people, no figures,',
+      'wide angle lens, deep depth of field,',
+      'professional film production quality,',
+      'rich atmospheric details, environmental storytelling,',
+      '8K, photorealistic, consistent art style',
+    ]
+      .filter(Boolean)
+      .join(' ')
+
+    const negativePrompt =
+      'blurry, low quality, amateur, people, figures, characters, watermark, text overlay, signature'
+
+    return this.generateImage(scenePrompt, negativePrompt, {
       width: 1344,
       height: 768,
     })
@@ -1091,7 +1163,8 @@ export const aiClient = {
   async generateTts(
     storyboardId: string,
     text: string,
-    voiceId?: string
+    voiceId?: string,
+    voiceStyle?: string
   ): Promise<void> {
     const provider = await getActiveProvider('tts')
     if (!provider) {
@@ -1109,7 +1182,7 @@ export const aiClient = {
       if (provider.provider === 'z-ai-sdk') {
         audioDataUrl = await this._generateTtsZai(text, voiceId)
       } else if (provider.provider === 'openai') {
-        audioDataUrl = await this._generateTtsOpenAI(text, voiceId, provider)
+        audioDataUrl = await this._generateTtsOpenAI(text, voiceId, provider, voiceStyle)
       } else if (provider.provider === 'fish-audio') {
         audioDataUrl = await this._generateTtsFishAudio(text, voiceId, provider)
       } else if (provider.provider === 'nvidia') {
@@ -1152,9 +1225,22 @@ export const aiClient = {
   async _generateTtsOpenAI(
     text: string,
     voiceId: string | undefined,
-    provider: ProviderConfig
+    provider: ProviderConfig,
+    voiceStyle?: string
   ): Promise<string> {
     const url = `${provider.baseUrl.replace(/\/$/, '')}/audio/speech`
+
+    const body: Record<string, unknown> = {
+      model: provider.model || 'tts-1',
+      input: text,
+      voice: voiceId || 'alloy',
+      response_format: 'wav',
+    }
+
+    // For gpt-4o-mini-tts model, add instructions parameter for voice style/personality
+    if (provider.model === 'gpt-4o-mini-tts' && voiceStyle) {
+      body.instructions = voiceStyle
+    }
 
     const res = await fetch(url, {
       method: 'POST',
@@ -1162,12 +1248,7 @@ export const aiClient = {
         Authorization: `Bearer ${provider.apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        model: provider.model || 'tts-1',
-        input: text,
-        voice: voiceId || 'alloy',
-        response_format: 'wav',
-      }),
+      body: JSON.stringify(body),
     })
 
     if (!res.ok) {

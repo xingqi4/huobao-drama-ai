@@ -57,6 +57,7 @@ export interface Character {
   personality: string
   voiceStyle: string
   voiceId: string | null
+  imagePrompt: string | null
   imageUrl: string | null
   createdAt: string
   updatedAt: string

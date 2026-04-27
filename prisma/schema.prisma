@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider          = "sqlite"
+  provider          = "postgresql"
   url               = env("DATABASE_URL")
+  directUrl         = env("DIRECT_URL")
   relationMode      = "prisma"
 }
 
@@ -61,6 +62,7 @@ model Character {
   personality String   @default("")
   voiceStyle  String   @default("")
   voiceId     String?
+  imagePrompt String?
   imageUrl    String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

@@ -559,6 +559,55 @@ export const api = {
       }>(`/api/agent/${agentType}`),
   },
 
+  // ---- Agents ----
+  agents: {
+    list: () =>
+      request<{
+        agents: Array<{
+          agentType: string
+          name: string
+          description: string
+          config: {
+            systemPrompt: string
+            model: string | null
+            temperature: number
+            maxTokens: number
+            isActive: boolean
+          }
+          defaultSystemPrompt: string
+          tools: Array<{ name: string; description: string; parameters: Record<string, unknown> }>
+          skillContent: string | null
+        }>
+      }>('/api/agents').then((r) => r.agents),
+
+    update: (
+      agentType: string,
+      config: {
+        systemPrompt?: string
+        model?: string
+        temperature?: number
+        maxTokens?: number
+        isActive?: boolean
+      }
+    ) =>
+      request<{
+        agentType: string
+        name: string
+        description: string
+        config: {
+          systemPrompt: string
+          model: string | null
+          temperature: number
+          maxTokens: number
+          isActive: boolean
+        }
+      }>(`/api/agent/${agentType}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config),
+      }),
+  },
+
   // ---- Settings ----
   settings: {
     get: () => request<SettingsResponse>('/api/settings'),

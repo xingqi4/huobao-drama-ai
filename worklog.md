@@ -124,3 +124,43 @@ Stage Summary:
 - No raw SQL migration code remains — schema managed via `prisma db push`
 - All API routes cleaned of `ensureDatabaseReady` calls
 - Ready for Vercel deployment with PostgreSQL (e.g., Vercel Postgres / Neon / Supabase)
+
+---
+Task ID: 4
+Agent: Agent Config & Pipeline Integration Agent
+Task: Add Agent Configuration UI + grid_prompt_generator Pipeline Integration
+
+Work Log:
+- Added PATCH endpoint to /api/agent/[type]/route.ts for updating agent config (systemPrompt, model, temperature, maxTokens, isActive)
+  - Uses upsert pattern: creates AgentConfig row if not exists, updates if exists
+  - Returns updated config with defaults from DEFAULT_SYSTEM_PROMPTS
+- Created /api/agents/route.ts (GET) for listing all agent configs
+  - Returns all 5 agents with names, descriptions, prompts, tool lists, and SKILL.md content
+  - Merges DB config with defaults when no DB row exists
+- Updated src/lib/api.ts with agents.list() and agents.update() methods
+  - agents.list() — GET /api/agents, returns full agent info array
+  - agents.update(agentType, config) — PATCH /api/agent/[type]
+- Added 5th tab "🤖 Agent配置" to settings-view.tsx
+  - AgentConfigCard component for each of the 5 agents
+  - Active/Inactive toggle switch
+  - Model selector (text input, follows global LLM setting if empty)
+  - Temperature slider (0-2, step 0.1)
+  - Max tokens input
+  - Expandable system prompt editor with "Reset to Default" button
+  - Read-only tools list (name + description per tool)
+  - Collapsible SKILL.md preview
+- Integrated grid_prompt_generator into pipeline as step 6 (提示词增强)
+  - Pipeline now: 原始内容→AI改写→提取→音色分配→分镜→提示词增强→制作 (7 steps)
+  - Added handleGenerateEnhancedPrompts() using grid_prompt_generator agent via SSE streaming
+  - Added renderPromptEnhancePanel() with stats cards, per-shot prompt details, and copy functionality
+  - Updated isStepCompleted to handle 'prompt_enhance' step
+  - Updated renderActivePanel switch to include 'prompt_enhance' case
+  - Step numbering updated: 01-07 across all panels
+- All lint checks pass clean
+
+Stage Summary:
+- Agent configuration now fully exposed in settings UI with 5th tab
+- Users can see and configure all 5 agents: script_rewriter, extractor, storyboard_breaker, voice_assigner, grid_prompt_generator
+- grid_prompt_generator integrated into pipeline between storyboard and production
+- API endpoints: PATCH /api/agent/[type], GET /api/agents
+- Client API: api.agents.list(), api.agents.update()

@@ -3,9 +3,10 @@ import { aiClient } from '@/lib/ai-config'
 import { db } from '@/lib/db'
 
 // POST /api/ai/generate-tts - Generate TTS audio for a storyboard shot (multi-provider)
+// Now looks up the character's voiceId and voiceStyle from the database
 export async function POST(request: NextRequest) {
   try {
-    const { storyboardId, text, voiceId } = await request.json()
+    const { storyboardId, text, voiceId, voiceStyle } = await request.json()
 
     if (!storyboardId) {
       return NextResponse.json(
@@ -36,8 +37,42 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Use multi-provider aiClient
-    await aiClient.generateTts(storyboardId, ttsText, voiceId)
+    // Resolve voiceId and voiceStyle from the character if not explicitly provided
+    let resolvedVoiceId = voiceId
+    let resolvedVoiceStyle = voiceStyle
+
+    if (!resolvedVoiceId && storyboard.dialogueChar) {
+      // Look up the episode to get dramaId, then find the character
+      const episode = await db.episode.findUnique({
+        where: { id: storyboard.episodeId },
+        select: { dramaId: true },
+      })
+
+      if (episode) {
+        const character = await db.character.findFirst({
+          where: {
+            dramaId: episode.dramaId,
+            name: { equals: storyboard.dialogueChar, mode: 'insensitive' },
+          },
+        })
+
+        if (character) {
+          if (character.voiceId) {
+            resolvedVoiceId = character.voiceId
+          }
+          if (character.voiceStyle) {
+            resolvedVoiceStyle = character.voiceStyle
+          }
+          // Build voice instructions from character personality + voiceStyle
+          if (!resolvedVoiceStyle && character.personality) {
+            resolvedVoiceStyle = character.personality
+          }
+        }
+      }
+    }
+
+    // Use multi-provider aiClient with voice instructions
+    await aiClient.generateTts(storyboardId, ttsText, resolvedVoiceId, resolvedVoiceStyle)
 
     // Fetch updated storyboard
     const updatedStoryboard = await db.storyboard.findUnique({

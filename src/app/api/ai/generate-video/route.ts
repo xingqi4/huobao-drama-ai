@@ -6,6 +6,32 @@ import { db } from '@/lib/db'
 // Supports both text-to-video (no firstFrameUrl) and image-to-video (with firstFrameUrl)
 // When firstFrameUrl is provided, uses it as the first frame for image-to-video generation
 // When firstFrameUrl is absent, uses text-to-video (prompt-only)
+
+/**
+ * Enhance a raw video prompt with production-quality tags for short drama.
+ * Adds cinematic motion, aspect ratio, consistency, and quality tags.
+ */
+function enhanceVideoPrompt(
+  rawPrompt: string,
+  cameraMovement?: string
+): string {
+  const movementTag = cameraMovement && cameraMovement !== 'static'
+    ? `smooth camera ${cameraMovement},`
+    : 'smooth subtle camera movement,'
+
+  const enhancedParts = [
+    rawPrompt,
+    movementTag,
+    'cinematic motion, fluid animation,',
+    'consistent character appearance throughout,',
+    'professional short drama quality,',
+    '9:16 vertical format,',
+    'no text, no watermark, no subtitles',
+  ]
+
+  return enhancedParts.filter(Boolean).join(' ')
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { storyboardId, prompt, firstFrameUrl } = await request.json()
@@ -30,14 +56,17 @@ export async function POST(request: NextRequest) {
     }
 
     // Use storyboard's videoPrompt if no prompt provided
-    const videoPrompt = prompt || storyboard.videoPrompt || storyboard.action || ''
+    const rawVideoPrompt = prompt || storyboard.videoPrompt || storyboard.action || ''
 
-    if (!videoPrompt) {
+    if (!rawVideoPrompt) {
       return NextResponse.json(
         { error: 'No prompt provided and storyboard has no video prompt or action' },
         { status: 400 }
       )
     }
+
+    // Enhance the video prompt with quality tags
+    const videoPrompt = enhanceVideoPrompt(rawVideoPrompt, storyboard.cameraMovement || undefined)
 
     // firstFrameUrl is optional - when present, it's image-to-video; when absent, text-to-video
     const frameUrl = firstFrameUrl || storyboard.firstFrameUrl || undefined

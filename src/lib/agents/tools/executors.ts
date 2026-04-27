@@ -568,8 +568,7 @@ const generateCharacterPrompt: ToolExecutor = async (params, context) => {
     throw new Error('characterName and prompt are required')
   }
 
-  // Find the character and store the prompt in imageUrl field temporarily
-  // (We'll use a convention: store as "prompt:..." to differentiate from actual URLs)
+  // Find the character and save the prompt to imagePrompt field
   const character = await db.character.findFirst({
     where: {
       dramaId: context.dramaId,
@@ -581,14 +580,17 @@ const generateCharacterPrompt: ToolExecutor = async (params, context) => {
     throw new Error(`Character "${characterName}" not found`)
   }
 
-  // We don't have a dedicated prompt field on Character,
-  // so we store a structured note. The actual prompt will be used
-  // when generating the image. For now, record the prompt.
+  // Save the generated prompt to the Character's imagePrompt field
+  await db.character.update({
+    where: { id: character.id },
+    data: { imagePrompt: prompt },
+  })
+
   return {
     success: true,
     characterName,
     prompt,
-    message: `角色"${characterName}"的肖像提示词已生成`,
+    message: `角色"${characterName}"的肖像提示词已生成并保存`,
   }
 }
 

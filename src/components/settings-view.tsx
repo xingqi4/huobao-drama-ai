@@ -13,6 +13,13 @@ import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
+import { Slider } from '@/components/ui/slider'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+} from '@/components/ui/collapsible'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import {
   ArrowLeft,
@@ -38,6 +45,9 @@ import {
   Zap,
   Star,
   Sparkle,
+  Bot,
+  RotateCcw,
+  Wrench,
 } from 'lucide-react'
 
 // ============================================================
@@ -65,6 +75,26 @@ const CATEGORY_META: Record<AiCategory, { label: string; icon: React.ReactNode; 
     icon: <Volume2 className="size-4" />,
     badge: '角色配音',
   },
+}
+
+// ============================================================
+// Agent type for config
+// ============================================================
+
+interface AgentInfo {
+  agentType: string
+  name: string
+  description: string
+  config: {
+    systemPrompt: string
+    model: string | null
+    temperature: number
+    maxTokens: number
+    isActive: boolean
+  }
+  defaultSystemPrompt: string
+  tools: Array<{ name: string; description: string; parameters: Record<string, unknown> }>
+  skillContent: string | null
 }
 
 // ============================================================
@@ -612,6 +642,267 @@ function CategoryPanel({
 }
 
 // ============================================================
+// Agent Config Card — one per agent type
+// ============================================================
+
+function AgentConfigCard({
+  agent,
+  saving,
+  onSave,
+}: {
+  agent: AgentInfo
+  saving: boolean
+  onSave: (agentType: string, config: Partial<AgentInfo['config']>) => Promise<void>
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const [promptExpanded, setPromptExpanded] = useState(false)
+  const [toolsExpanded, setToolsExpanded] = useState(false)
+  const [skillExpanded, setSkillExpanded] = useState(false)
+  const [systemPrompt, setSystemPrompt] = useState(agent.config.systemPrompt)
+  const [model, setModel] = useState(agent.config.model ?? '')
+  const [temperature, setTemperature] = useState(agent.config.temperature)
+  const [maxTokens, setMaxTokens] = useState(agent.config.maxTokens)
+  const [isActive, setIsActive] = useState(agent.config.isActive)
+
+  // Track the agent key to detect when we need to re-sync state
+  const agentKey = `${agent.agentType}-${agent.config.systemPrompt}-${agent.config.model}-${agent.config.temperature}-${agent.config.maxTokens}-${agent.config.isActive}`
+  const [prevAgentKey, setPrevAgentKey] = useState(agentKey)
+  if (agentKey !== prevAgentKey) {
+    setPrevAgentKey(agentKey)
+    setSystemPrompt(agent.config.systemPrompt)
+    setModel(agent.config.model ?? '')
+    setTemperature(agent.config.temperature)
+    setMaxTokens(agent.config.maxTokens)
+    setIsActive(agent.config.isActive)
+  }
+
+  const hasCustomPrompt = systemPrompt !== agent.defaultSystemPrompt
+
+  const handleSave = async (updates: Partial<AgentInfo['config']>) => {
+    await onSave(agent.agentType, updates)
+  }
+
+  const handleToggleActive = async (checked: boolean) => {
+    setIsActive(checked)
+    await handleSave({ isActive: checked })
+  }
+
+  const handleResetPrompt = async () => {
+    setSystemPrompt(agent.defaultSystemPrompt)
+    await handleSave({ systemPrompt: agent.defaultSystemPrompt })
+  }
+
+  return (
+    <Card className={`border-border/50 transition-all duration-200 ${isActive ? 'bg-card' : 'bg-card/50 opacity-75'}`}>
+      <CardContent className="p-4 sm:p-5">
+        {/* Agent header */}
+        <div className="flex items-start gap-3">
+          <div className="flex-shrink-0 size-9 rounded bg-primary/10 flex items-center justify-center">
+            <Bot className="size-4 text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-semibold">{agent.name}</span>
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono">
+                {agent.agentType}
+              </Badge>
+              {isActive ? (
+                <Badge className="text-[10px] bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
+                  已启用
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className="text-[10px]">
+                  已禁用
+                </Badge>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+              {agent.description}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={isActive}
+              onCheckedChange={handleToggleActive}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setExpanded(!expanded)}
+              className="text-muted-foreground hover:text-foreground -mr-2"
+            >
+              {expanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+            </Button>
+          </div>
+        </div>
+
+        {/* Expandable config */}
+        <AnimatePresence>
+          {expanded && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden"
+            >
+              <div className="mt-4 pt-4 border-t border-border/30 space-y-5">
+                {/* Model */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium flex items-center gap-1.5">
+                    <Cpu className="size-3" />
+                    模型
+                  </Label>
+                  <Input
+                    placeholder="留空则使用 LLM 设置中的默认模型"
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                    onBlur={() => handleSave({ model: model || null })}
+                    className="bg-muted/30 border-border/50 text-sm"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    留空表示跟随全局 LLM 设置
+                  </p>
+                </div>
+
+                {/* Temperature */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium">Temperature</Label>
+                    <span className="text-xs font-mono text-primary">{temperature.toFixed(1)}</span>
+                  </div>
+                  <Slider
+                    value={[temperature]}
+                    onValueChange={([val]) => setTemperature(val)}
+                    onValueCommit={([val]) => handleSave({ temperature: val })}
+                    min={0}
+                    max={2}
+                    step={0.1}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-[10px] text-muted-foreground">
+                    <span>精确 (0)</span>
+                    <span>创意 (2)</span>
+                  </div>
+                </div>
+
+                {/* Max Tokens */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">Max Tokens</Label>
+                  <Input
+                    type="number"
+                    min={256}
+                    max={32768}
+                    step={256}
+                    value={maxTokens}
+                    onChange={(e) => setMaxTokens(Number(e.target.value))}
+                    onBlur={() => handleSave({ maxTokens: maxTokens })}
+                    className="bg-muted/30 border-border/50 text-sm"
+                  />
+                </div>
+
+                {/* System Prompt Editor */}
+                <Collapsible open={promptExpanded} onOpenChange={setPromptExpanded}>
+                  <CollapsibleTrigger className="flex items-center gap-2 text-xs font-medium w-full hover:text-foreground transition-colors">
+                    <Sparkles className="size-3 text-primary" />
+                    系统提示词 (System Prompt)
+                    {hasCustomPrompt && (
+                      <Badge variant="secondary" className="text-[9px] px-1 py-0 bg-amber-500/10 text-amber-600 border-amber-500/20">
+                        已自定义
+                      </Badge>
+                    )}
+                    <ChevronDown className={`size-3 ml-auto transition-transform ${promptExpanded ? 'rotate-180' : ''}`} />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="mt-2 space-y-2">
+                      <Textarea
+                        value={systemPrompt}
+                        onChange={(e) => setSystemPrompt(e.target.value)}
+                        className="min-h-[200px] bg-muted/30 border-border/50 text-xs leading-relaxed font-mono"
+                      />
+                      <div className="flex items-center justify-between">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="text-[10px] h-7 gap-1"
+                          onClick={handleResetPrompt}
+                          disabled={!hasCustomPrompt}
+                        >
+                          <RotateCcw className="size-3" />
+                          恢复默认提示词
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="text-[10px] h-7"
+                          onClick={() => handleSave({ systemPrompt })}
+                          disabled={saving}
+                        >
+                          {saving ? <Loader2 className="size-3 animate-spin" /> : <Save className="size-3" />}
+                          保存提示词
+                        </Button>
+                      </div>
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+
+                {/* Tools List */}
+                <Collapsible open={toolsExpanded} onOpenChange={setToolsExpanded}>
+                  <CollapsibleTrigger className="flex items-center gap-2 text-xs font-medium w-full hover:text-foreground transition-colors">
+                    <Wrench className="size-3 text-primary" />
+                    可用工具
+                    <Badge variant="secondary" className="text-[9px] px-1 py-0">
+                      {agent.tools.length}
+                    </Badge>
+                    <ChevronDown className={`size-3 ml-auto transition-transform ${toolsExpanded ? 'rotate-180' : ''}`} />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="mt-2 space-y-2">
+                      {agent.tools.map((tool) => (
+                        <div key={tool.name} className="rounded-md border border-border/40 bg-muted/20 p-2.5">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <code className="text-xs font-medium text-primary">{tool.name}</code>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground leading-relaxed">
+                            {tool.description}
+                          </p>
+                        </div>
+                      ))}
+                      {agent.tools.length === 0 && (
+                        <p className="text-[11px] text-muted-foreground">该 Agent 暂无可用工具</p>
+                      )}
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+
+                {/* SKILL.md Preview */}
+                {agent.skillContent && (
+                  <Collapsible open={skillExpanded} onOpenChange={setSkillExpanded}>
+                    <CollapsibleTrigger className="flex items-center gap-2 text-xs font-medium w-full hover:text-foreground transition-colors">
+                      <Star className="size-3 text-primary" />
+                      SKILL.md 专业技能指南
+                      <ChevronDown className={`size-3 ml-auto transition-transform ${skillExpanded ? 'rotate-180' : ''}`} />
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <div className="mt-2">
+                        <pre className="text-[10px] leading-relaxed bg-muted/30 rounded-md border border-border/40 p-3 max-h-64 overflow-y-auto whitespace-pre-wrap break-words">
+                          {agent.skillContent}
+                        </pre>
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </CardContent>
+    </Card>
+  )
+}
+
+// ============================================================
 // Main Settings View
 // ============================================================
 
@@ -641,6 +932,10 @@ export function SettingsView() {
     Record<AiCategory, { success: boolean; provider?: string; model?: string; error?: string; responsePreview?: string } | null>
   >({ llm: null, image: null, video: null, tts: null })
 
+  // Agent config data
+  const [agentsList, setAgentsList] = useState<AgentInfo[]>([])
+  const [agentSaving, setAgentSaving] = useState<string | null>(null)
+
   // Active tab
   const [activeTab, setActiveTab] = useState<string>('llm')
 
@@ -652,6 +947,9 @@ export function SettingsView() {
         const data = await api.settings.get()
         setProvidersData(data.providers as Record<AiCategory, ProviderConfig[]>)
         setPresetsData(data.presets as Record<AiCategory, ProviderPreset[]>)
+        // Load agent configs
+        const agents = await api.agents.list()
+        setAgentsList(agents)
       } catch (err) {
         toast({
           title: '加载设置失败',
@@ -723,6 +1021,33 @@ export function SettingsView() {
       }
     },
     [toast, updateProvidersFromResponse]
+  )
+
+  // Handle saving agent config
+  const handleSaveAgent = useCallback(
+    async (agentType: string, config: Partial<AgentInfo['config']>) => {
+      setAgentSaving(agentType)
+      try {
+        const result = await api.agents.update(agentType, config)
+        setAgentsList((prev) =>
+          prev.map((a) =>
+            a.agentType === agentType
+              ? { ...a, config: result.config }
+              : a
+          )
+        )
+        toast({ title: 'Agent 配置已保存' })
+      } catch (err) {
+        toast({
+          title: '保存 Agent 配置失败',
+          description: String(err),
+          variant: 'destructive',
+        })
+      } finally {
+        setAgentSaving(null)
+      }
+    },
+    [toast]
   )
 
   // Handle test connection
@@ -803,7 +1128,7 @@ export function SettingsView() {
               onValueChange={setActiveTab}
               className="w-full"
             >
-              <TabsList className="w-full sm:w-auto grid grid-cols-4 sm:inline-flex h-auto p-1">
+              <TabsList className="w-full sm:w-auto grid grid-cols-5 sm:inline-flex h-auto p-1">
                 {(Object.keys(CATEGORY_META) as AiCategory[]).map((cat) => {
                   const meta = CATEGORY_META[cat]
                   const activeProvider = providersData[cat]?.find((p) => p.isActive)
@@ -827,6 +1152,17 @@ export function SettingsView() {
                     </TabsTrigger>
                   )
                 })}
+                <TabsTrigger
+                  value="agent"
+                  className="gap-1.5 text-xs sm:text-sm py-2 px-2 sm:px-3"
+                >
+                  <Bot className="size-4" />
+                  <span className="hidden sm:inline">Agent配置</span>
+                  <span className="sm:hidden">Agent</span>
+                  {agentsList.some((a) => a.config.isActive) && (
+                    <span className="inline-block size-1.5 rounded-full bg-emerald-500" />
+                  )}
+                </TabsTrigger>
               </TabsList>
 
               {(Object.keys(CATEGORY_META) as AiCategory[]).map((category) => (
@@ -844,6 +1180,49 @@ export function SettingsView() {
                   />
                 </TabsContent>
               ))}
+
+              {/* Agent Configuration Tab */}
+              <TabsContent value="agent" className="mt-4">
+                <div className="space-y-4">
+                  {/* Header */}
+                  <div className="flex items-center gap-2">
+                    <Bot className="size-4 text-primary" />
+                    <h2 className="text-base font-bold">Agent 配置</h2>
+                    <Badge variant="secondary" className="text-[10px]">
+                      {agentsList.length} 个 Agent
+                    </Badge>
+                  </div>
+
+                  {/* Agent list */}
+                  <div className="space-y-3">
+                    {agentsList.map((agent) => (
+                      <AgentConfigCard
+                        key={agent.agentType}
+                        agent={agent}
+                        saving={agentSaving === agent.agentType}
+                        onSave={handleSaveAgent}
+                      />
+                    ))}
+                    {agentsList.length === 0 && (
+                      <div className="flex items-center justify-center py-12">
+                        <div className="text-center">
+                          <Bot className="size-10 text-muted-foreground/30 mx-auto mb-3" />
+                          <p className="text-sm text-muted-foreground">正在加载 Agent 配置...</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Info hint */}
+                  <div className="flex items-start gap-2 p-3 rounded-lg bg-muted/20 border border-border/30">
+                    <Info className="size-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      Agent 是短剧创作管线中的AI专家，每个Agent负责特定任务（改写、提取、分镜等）。
+                      您可以自定义每个Agent的系统提示词、模型、温度等参数来优化输出效果。
+                    </p>
+                  </div>
+                </div>
+              </TabsContent>
             </Tabs>
 
             {/* Bottom info */}

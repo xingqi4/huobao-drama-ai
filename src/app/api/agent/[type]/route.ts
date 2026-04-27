@@ -1,7 +1,8 @@
 // ============================================================
 // Agent API Route — /api/agent/[type]
-// POST: Execute an agent with a message
-// GET:  Get agent config
+// POST:  Execute an agent with a message
+// GET:   Get agent config
+// PATCH: Update agent config
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -84,6 +85,100 @@ export async function GET(
       ? skillContent.slice(0, 200) + '...'
       : null,
   })
+}
+
+// ============================================================
+// PATCH /api/agent/[type] — Update agent config
+// ============================================================
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ type: string }> }
+) {
+  const { type } = await params
+
+  if (!isValidAgentType(type)) {
+    return NextResponse.json(
+      {
+        error: `Invalid agent type: "${type}". Valid types: ${ALL_AGENT_TYPES.join(', ')}`,
+      },
+      { status: 400 }
+    )
+  }
+
+  const agentType = type as AgentType
+
+  // Parse request body
+  let body: {
+    systemPrompt?: string
+    model?: string
+    temperature?: number
+    maxTokens?: number
+    isActive?: boolean
+  }
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json(
+      { error: 'Invalid JSON body' },
+      { status: 400 }
+    )
+  }
+
+  // Build update data — only include fields that were provided
+  const updateData: Record<string, unknown> = {}
+  if (body.systemPrompt !== undefined) updateData.systemPrompt = body.systemPrompt
+  if (body.model !== undefined) updateData.model = body.model
+  if (body.temperature !== undefined) updateData.temperature = body.temperature
+  if (body.maxTokens !== undefined) updateData.maxTokens = body.maxTokens
+  if (body.isActive !== undefined) updateData.isActive = body.isActive
+
+  try {
+    const { db } = await import('@/lib/db')
+    const agentConfigModel = (db as any).agentConfig
+    if (!agentConfigModel) {
+      return NextResponse.json(
+        { error: 'AgentConfig table not available' },
+        { status: 500 }
+      )
+    }
+
+    // Upsert: create if not exists, update if exists
+    const defaultPrompt = DEFAULT_SYSTEM_PROMPTS[agentType]
+    const updated = await agentConfigModel.upsert({
+      where: { agentType },
+      update: updateData,
+      create: {
+        agentType,
+        systemPrompt: body.systemPrompt ?? defaultPrompt,
+        model: body.model ?? null,
+        temperature: body.temperature ?? 0.7,
+        maxTokens: body.maxTokens ?? 4096,
+        isActive: body.isActive ?? true,
+      },
+    })
+
+    return NextResponse.json({
+      agentType,
+      name: AGENT_NAMES[agentType],
+      description: AGENT_DESCRIPTIONS[agentType],
+      config: {
+        systemPrompt: updated.systemPrompt || defaultPrompt,
+        model: updated.model || null,
+        temperature: updated.temperature ?? 0.7,
+        maxTokens: updated.maxTokens ?? 4096,
+        isActive: updated.isActive ?? true,
+      },
+    })
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    console.error(`[Agent ${agentType}] Config update failed:`, errorMsg)
+
+    return NextResponse.json(
+      { error: `Failed to update agent config: ${errorMsg}` },
+      { status: 500 }
+    )
+  }
 }
 
 // ============================================================
