@@ -1,32 +1,32 @@
 ---
 Task ID: 1
-Agent: main
-Task: Fix git merge conflict, sync code, fix bugs, deploy to Vercel
+Agent: Main Agent
+Task: Implement Seedance 2.0 video model, extract module save/image gen, and progress indicators
 
 Work Log:
-- Checked git status: no merge conflict existed, repo was clean with just an initial commit
-- Added git remote: https://github.com/dav-niu474/huobao-drama-ai.git
-- Fetched and reset local to match remote/main (commit 6e267df)
-- Generated Prisma client and pushed schema to SQLite
-- Started dev server on port 3000
-- Verified all API endpoints: /api/health, /api/dramas, /api/settings all working locally
-- Found Vercel production database missing tables, ran force migration via POST /api/migrate?force=true
-- Verified Vercel endpoints all returning 200 OK
-- Fixed bug: episode-workspace.tsx used result.url instead of result.imageUrl (API returns imageUrl)
-- Fixed bug: runSafeMigration() used PostgreSQL-specific DO $$ syntax that fails on SQLite
-  - Added isPostgres() detection function
-  - Used TIMESTAMP(3)/DATETIME based on database type
-  - Used DOUBLE PRECISION/REAL based on database type
-  - Only run foreign key constraint creation on PostgreSQL
-- Ran lint check - all passed
-- Committed and pushed to GitHub (commit 26dd4bb)
-- Verified Vercel deployment completed successfully
-- Tested creating drama and episode on Vercel - all working
-- Cleaned up test data
+- Explored full project structure and read key files (ai-config.ts, episode-workspace.tsx, api.ts, store.ts, route files)
+- Added Seedance 2.0 provider preset to PROVIDER_PRESETS.video in ai-config.ts
+- Added _generateVideoSeedance() method with SiliconFlow API submit/poll pattern, image_url support for first frame
+- Updated generateVideo() dispatch to include 'seedance' provider branch
+- Created /api/ai/generate-scene-image/route.ts for scene image generation
+- Created /api/ai/extract-stream/route.ts with SSE progress streaming (validating → analyzing → extracting → saving-characters → saving-scenes → completed)
+- Created /api/ai/generate-storyboard-stream/route.ts with SSE progress streaming (validating → analyzing → generating → clearing → saving per shot → completed)
+- Updated frontend api.ts with generateSceneImage(), extractStream(), generateStoryboardStream() methods
+- Updated episode-workspace.tsx with:
+  - New state: generatingSceneImg, generationProgress, batchProgress
+  - handleGenerateSceneImage() for individual scene image generation
+  - handleGenerateAllExtractImages() for batch character + scene image generation
+  - Updated handleExtract() to use extractStream() with SSE progress
+  - Updated handleGenerateStoryboard() to use generateStoryboardStream() with SSE progress
+  - Updated handleGenerateAllImages() and handleGenerateAllVideos() with batch progress tracking
+  - Extract panel: progress bar during extraction, scene image gen/upload buttons, one-click batch gen button
+  - Storyboard panel: progress bar during generation
+  - Production panel: batch progress bar during batch image/video generation
+- Ran lint check - passes cleanly
+- Dev server running successfully
 
 Stage Summary:
-- Git conflict resolved (was already resolved)
-- Remote code synced to local
-- Two bugs fixed: API field mismatch and SQLite/PostgreSQL dual-database compatibility
-- Code pushed to GitHub and deployed to Vercel
-- All endpoints verified working on both local and production
+- Seedance 2.0 fully integrated as video provider (backend + auto-appears in settings)
+- Extract module now supports scene image generation, upload, and one-click batch generation
+- All three modules (extract, storyboard, production) now show intermediate progress with Progress bar + step descriptions
+- 4 new files created, 3 existing files modified

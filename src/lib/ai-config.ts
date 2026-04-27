@@ -126,6 +126,14 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
       envKey: 'SILICONFLOW_API_KEY',
     },
     {
+      provider: 'seedance',
+      name: 'Seedance 2.0',
+      defaultBaseUrl: 'https://api.siliconflow.cn/v1',
+      defaultModel: 'bytedance-seedance/seedance-2.0-pro-250428',
+      description: 'Seedance 2.0 视频生成（字节跳动，支持图生视频）',
+      envKey: 'SILICONFLOW_API_KEY',
+    },
+    {
       provider: 'volcengine',
       name: '火山引擎 (Kling)',
       defaultBaseUrl: 'https://visual.volcengineapi.com',
@@ -721,6 +729,8 @@ export const aiClient = {
         videoUrl = await this._generateVideoZai(prompt, firstFrameUrl)
       } else if (provider.provider === 'siliconflow') {
         videoUrl = await this._generateVideoSiliconFlow(prompt, firstFrameUrl, provider)
+      } else if (provider.provider === 'seedance') {
+        videoUrl = await this._generateVideoSeedance(prompt, firstFrameUrl, provider)
       } else if (provider.provider === 'volcengine') {
         videoUrl = await this._generateVideoVolcengine(prompt, firstFrameUrl, provider)
       } else {
@@ -841,6 +851,77 @@ export const aiClient = {
     }
 
     throw new Error('SiliconFlow video generation timed out')
+  },
+
+  async _generateVideoSeedance(
+    prompt: string,
+    firstFrameUrl: string | undefined,
+    provider: ProviderConfig
+  ): Promise<string> {
+    const baseUrl = provider.baseUrl.replace(/\/$/, '')
+    const submitUrl = `${baseUrl}/video/submit`
+
+    const submitBody: Record<string, unknown> = {
+      model: provider.model || 'bytedance-seedance/seedance-2.0-pro-250428',
+      prompt,
+    }
+
+    // Seedance 2.0 supports image-to-video via image_url parameter
+    if (firstFrameUrl) {
+      submitBody.image_url = firstFrameUrl
+    }
+
+    const res = await fetch(submitUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${provider.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(submitBody),
+    })
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new Error(`Seedance 2.0 Video API error (${res.status}): ${text.slice(0, 300)}`)
+    }
+
+    const data = await res.json()
+    const requestId = data.requestId || data.id
+
+    if (!requestId) {
+      throw new Error('Seedance 2.0 video submission returned no request ID')
+    }
+
+    // Poll for result
+    const statusUrl = `${baseUrl}/video/status/${requestId}`
+    const maxPolls = 120 // Seedance may take longer
+    const pollInterval = 5000
+
+    for (let i = 0; i < maxPolls; i++) {
+      await new Promise((resolve) => setTimeout(resolve, pollInterval))
+      const statusRes = await fetch(statusUrl, {
+        headers: { Authorization: `Bearer ${provider.apiKey}` },
+      })
+      const statusData = await statusRes.json()
+
+      if (statusData.status === 'Succeed' || statusData.status === 'SUCCESS') {
+        const videoUrl =
+          statusData.results?.videos?.[0]?.url ||
+          statusData.video_url ||
+          statusData.results?.content?.[0]?.url ||
+          ''
+        if (!videoUrl) {
+          throw new Error('Seedance 2.0 video generation succeeded but no URL was returned')
+        }
+        return videoUrl
+      }
+      if (statusData.status === 'Failed' || statusData.status === 'FAIL') {
+        const reason = statusData.reason || statusData.message || 'Unknown reason'
+        throw new Error(`Seedance 2.0 video generation failed: ${reason}`)
+      }
+    }
+
+    throw new Error('Seedance 2.0 video generation timed out')
   },
 
   async _generateVideoVolcengine(

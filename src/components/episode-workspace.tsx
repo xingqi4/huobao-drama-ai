@@ -145,11 +145,22 @@ export function EpisodeWorkspace() {
   const [storyboards, setStoryboards] = useState<Storyboard[]>([])
   const [saving, setSaving] = useState(false)
   const [generatingCharImg, setGeneratingCharImg] = useState<string | null>(null)
+  const [generatingSceneImg, setGeneratingSceneImg] = useState<string | null>(null)
   const [generatingShotImg, setGeneratingShotImg] = useState<string | null>(null)
   const [generatingVideo, setGeneratingVideo] = useState<string | null>(null)
   const [generatingTts, setGeneratingTts] = useState<string | null>(null)
   const [copiedField, setCopiedField] = useState<string | null>(null)
   const [uploadingField, setUploadingField] = useState<string | null>(null)
+  const [generationProgress, setGenerationProgress] = useState<{
+    step: string
+    message: string
+    progress: number
+  } | null>(null)
+  const [batchProgress, setBatchProgress] = useState<{
+    current: number
+    total: number
+    message: string
+  } | null>(null)
 
   // ── Fetch episode data ─────────────────────────────────────
 
@@ -279,14 +290,22 @@ export function EpisodeWorkspace() {
   const handleExtract = async () => {
     if (!selectedEpisodeId || !selectedDramaId) return
     setAiLoading(true)
+    setGenerationProgress({ step: 'starting', message: '开始提取...', progress: 0 })
     try {
-      await api.ai.extract(selectedEpisodeId, selectedDramaId)
+      await api.ai.extractStream(
+        selectedEpisodeId,
+        selectedDramaId,
+        (data) => {
+          setGenerationProgress({ step: data.step, message: data.message, progress: data.progress })
+        }
+      )
       toast({ title: '角色与场景提取完成' })
       await fetchEpisode()
     } catch (err) {
       toast({ title: '提取失败', description: String(err), variant: 'destructive' })
     } finally {
       setAiLoading(false)
+      setGenerationProgress(null)
     }
   }
 
@@ -295,14 +314,36 @@ export function EpisodeWorkspace() {
   const handleGenerateStoryboard = async () => {
     if (!selectedEpisodeId) return
     setAiLoading(true)
+    setGenerationProgress({ step: 'starting', message: '开始生成分镜...', progress: 0 })
     try {
-      await api.ai.generateStoryboard(selectedEpisodeId)
+      await api.ai.generateStoryboardStream(
+        selectedEpisodeId,
+        (data) => {
+          setGenerationProgress({ step: data.step, message: data.message, progress: data.progress })
+        }
+      )
       toast({ title: '分镜生成完成' })
       await fetchEpisode()
     } catch (err) {
       toast({ title: '分镜生成失败', description: String(err), variant: 'destructive' })
     } finally {
       setAiLoading(false)
+      setGenerationProgress(null)
+    }
+  }
+
+  // ── AI: Generate scene image ───────────────────────────────
+
+  const handleGenerateSceneImage = async (sceneId: string) => {
+    setGeneratingSceneImg(sceneId)
+    try {
+      await api.ai.generateSceneImage(sceneId)
+      toast({ title: '场景图已生成' })
+      await fetchEpisode()
+    } catch (err) {
+      toast({ title: '场景图生成失败', description: String(err), variant: 'destructive' })
+    } finally {
+      setGeneratingSceneImg(null)
     }
   }
 
@@ -349,17 +390,23 @@ export function EpisodeWorkspace() {
       toast({ title: '没有可生成的镜头图片' })
       return
     }
-    for (const sb of pending) {
+    setBatchProgress({ current: 0, total: pending.length, message: '生成图片中...' })
+    let successCount = 0
+    for (let i = 0; i < pending.length; i++) {
+      const sb = pending[i]
       setGeneratingShotImg(sb.id)
+      setBatchProgress({ current: i + 1, total: pending.length, message: `生成图片 ${i + 1}/${pending.length}...` })
       try {
         const result = await api.ai.generateImage(sb.imagePrompt!, '1024x576')
         await api.storyboards.update(sb.id, { firstFrameUrl: result.imageUrl })
+        successCount++
       } catch {
         // Continue with next shot even if one fails
       }
     }
     setGeneratingShotImg(null)
-    toast({ title: `${pending.length}个镜头图片生成完毕` })
+    setBatchProgress(null)
+    toast({ title: `${successCount}/${pending.length}个镜头图片生成完毕` })
     await fetchEpisode()
   }
 
@@ -410,17 +457,70 @@ export function EpisodeWorkspace() {
       toast({ title: '没有可生成的镜头视频（需要先生成首帧图片）' })
       return
     }
-    for (const sb of pending) {
+    setBatchProgress({ current: 0, total: pending.length, message: '生成视频中...' })
+    let successCount = 0
+    for (let i = 0; i < pending.length; i++) {
+      const sb = pending[i]
       setGeneratingVideo(sb.id)
+      setBatchProgress({ current: i + 1, total: pending.length, message: `生成视频 ${i + 1}/${pending.length}...` })
       try {
         const prompt = sb.videoPrompt ?? sb.imagePrompt ?? ''
         await api.ai.generateVideo(sb.id, prompt, sb.firstFrameUrl ?? undefined)
+        successCount++
       } catch {
         // Continue with next shot even if one fails
       }
     }
     setGeneratingVideo(null)
-    toast({ title: `${pending.length}个镜头视频生成完毕` })
+    setBatchProgress(null)
+    toast({ title: `${successCount}/${pending.length}个镜头视频生成完毕` })
+    await fetchEpisode()
+  }
+
+  // ── AI: Generate all extract images (characters + scenes) ───
+
+  const handleGenerateAllExtractImages = async () => {
+    const charsPending = characters.filter((c) => !c.imageUrl)
+    const scenesPending = scenes.filter((s) => !s.imageUrl)
+    const total = charsPending.length + scenesPending.length
+
+    if (total === 0) {
+      toast({ title: '所有角色和场景都已有图片' })
+      return
+    }
+
+    setBatchProgress({ current: 0, total, message: '一键生成图片中...' })
+    let successCount = 0
+
+    // Generate character images first
+    for (let i = 0; i < charsPending.length; i++) {
+      const char = charsPending[i]
+      setGeneratingCharImg(char.id)
+      setBatchProgress({ current: i + 1, total, message: `生成角色头像 ${i + 1}/${total}...` })
+      try {
+        await api.ai.generateCharacterImage(char.id)
+        successCount++
+      } catch {
+        // continue
+      }
+    }
+    setGeneratingCharImg(null)
+
+    // Then generate scene images
+    for (let i = 0; i < scenesPending.length; i++) {
+      const scene = scenesPending[i]
+      setGeneratingSceneImg(scene.id)
+      setBatchProgress({ current: charsPending.length + i + 1, total, message: `生成场景图 ${charsPending.length + i + 1}/${total}...` })
+      try {
+        await api.ai.generateSceneImage(scene.id)
+        successCount++
+      } catch {
+        // continue
+      }
+    }
+    setGeneratingSceneImg(null)
+    setBatchProgress(null)
+    toast({ title: `${successCount}/${total}个图片生成完毕` })
     await fetchEpisode()
   }
 
@@ -647,11 +747,19 @@ export function EpisodeWorkspace() {
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="text-center"
+            className="text-center max-w-sm w-full"
           >
             <Loader2 className="size-10 text-primary animate-spin mx-auto mb-4" />
             <h2 className="text-lg font-semibold mb-1">正在提取角色与场景...</h2>
-            <p className="text-sm text-muted-foreground">AI正在从剧本中识别角色和场景信息</p>
+            {generationProgress ? (
+              <>
+                <p className="text-sm text-muted-foreground mb-3">{generationProgress.message}</p>
+                <Progress value={generationProgress.progress} className="h-2 mb-1" />
+                <p className="text-xs text-muted-foreground">{generationProgress.progress}%</p>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">AI正在从剧本中识别角色和场景信息</p>
+            )}
           </motion.div>
         </div>
       )
@@ -666,15 +774,26 @@ export function EpisodeWorkspace() {
             <h2 className="text-sm font-semibold">提取角色与场景</h2>
             {episode?.extractStatus && statusBadge(episode.extractStatus)}
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleExtract}
-            disabled={aiLoading || isExtracting}
-          >
-            <RefreshCw className="size-3.5" />
-            重新提取
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleGenerateAllExtractImages}
+              disabled={aiLoading || isExtracting || (!characters.some(c => !c.imageUrl) && !scenes.some(s => !s.imageUrl))}
+            >
+              {batchProgress ? <Loader2 className="size-3.5 animate-spin" /> : <ImageIcon className="size-3.5" />}
+              一键生成图片
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleExtract}
+              disabled={aiLoading || isExtracting}
+            >
+              <RefreshCw className="size-3.5" />
+              重新提取
+            </Button>
+          </div>
         </div>
 
         <ScrollArea className="flex-1">
@@ -827,21 +946,65 @@ export function EpisodeWorkspace() {
                           {scene.description && (
                             <p className="text-xs text-muted-foreground line-clamp-2">{scene.description}</p>
                           )}
-                          {scene.prompt && (
+                          <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="mt-2 h-7 text-xs text-muted-foreground hover:text-foreground"
-                              onClick={() => handleCopy(scene.prompt, `scene-prompt-${scene.id}`)}
+                              className="h-7 text-xs text-primary hover:text-primary"
+                              onClick={() => handleGenerateSceneImage(scene.id)}
+                              disabled={generatingSceneImg === scene.id}
                             >
-                              {copiedField === `scene-prompt-${scene.id}` ? (
-                                <Check className="size-3 text-emerald-500" />
+                              {generatingSceneImg === scene.id ? (
+                                <Loader2 className="size-3 animate-spin" />
                               ) : (
-                                <Copy className="size-3" />
+                                <Camera className="size-3" />
                               )}
-                              复制场景提示词
+                              {scene.imageUrl ? '重新生成场景图' : '生成场景图'}
                             </Button>
-                          )}
+                            {scene.prompt && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 text-xs text-muted-foreground hover:text-foreground"
+                                onClick={() => handleCopy(scene.prompt, `scene-prompt-${scene.id}`)}
+                              >
+                                {copiedField === `scene-prompt-${scene.id}` ? (
+                                  <Check className="size-3 text-emerald-500" />
+                                ) : (
+                                  <Copy className="size-3" />
+                                )}
+                                复制场景提示词
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 text-xs text-muted-foreground hover:text-foreground"
+                              disabled={uploadingField === `scene-image-${scene.id}`}
+                              onClick={() => {
+                                const input = document.getElementById(`upload-scene-${scene.id}`) as HTMLInputElement
+                                input?.click()
+                              }}
+                            >
+                              {uploadingField === `scene-image-${scene.id}` ? (
+                                <Loader2 className="size-3 animate-spin" />
+                              ) : (
+                                <Upload className="size-3" />
+                              )}
+                              上传场景图
+                            </Button>
+                            <input
+                              id={`upload-scene-${scene.id}`}
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0]
+                                if (file) handleUpload(file, { sceneId: scene.id, fieldType: 'imageUrl' }, `scene-image-${scene.id}`)
+                                e.target.value = ''
+                              }}
+                            />
+                          </div>
                         </div>
                       </div>
                     </CardContent>
@@ -900,11 +1063,19 @@ export function EpisodeWorkspace() {
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="text-center"
+            className="text-center max-w-sm w-full"
           >
             <Loader2 className="size-10 text-primary animate-spin mx-auto mb-4" />
             <h2 className="text-lg font-semibold mb-1">正在生成分镜...</h2>
-            <p className="text-sm text-muted-foreground">AI正在将剧本拆解为镜头序列</p>
+            {generationProgress ? (
+              <>
+                <p className="text-sm text-muted-foreground mb-3">{generationProgress.message}</p>
+                <Progress value={generationProgress.progress} className="h-2 mb-1" />
+                <p className="text-xs text-muted-foreground">{generationProgress.progress}%</p>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">AI正在将剧本拆解为镜头序列</p>
+            )}
           </motion.div>
         </div>
       )
@@ -1080,6 +1251,14 @@ export function EpisodeWorkspace() {
             )}
           </div>
           <div className="flex items-center gap-2">
+            {batchProgress && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="size-3 animate-spin" />
+                <span>{batchProgress.message}</span>
+                <Progress value={(batchProgress.current / batchProgress.total) * 100} className="h-1.5 w-24" />
+                <span>{batchProgress.current}/{batchProgress.total}</span>
+              </div>
+            )}
             {pendingVideoShots.length > 0 && (
               <Button
                 size="sm"
