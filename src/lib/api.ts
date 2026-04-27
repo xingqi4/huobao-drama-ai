@@ -169,6 +169,46 @@ export const api = {
       fetch(`/api/episodes/${id}`, { method: 'DELETE' }).then((r) => {
         if (!r.ok) throw new Error(`Delete episode failed: ${r.status}`)
       }),
+
+    // Pipeline status - detailed progress for each production step
+    pipelineStatus: (episodeId: string) =>
+      request<{
+        scriptRewrite: { status: string; hasContent: boolean }
+        extractCharacters: { status: string; count: number }
+        extractScenes: { status: string; count: number }
+        generateImages: { status: string; completed: number; total: number }
+        generateVideos: { status: string; completed: number; total: number }
+        generateTts: { status: string; completed: number; total: number }
+        composeShots: { status: string; completed: number; total: number }
+        mergeEpisode: { status: string; mergedUrl: string | null }
+      }>(`/api/episodes/${episodeId}/pipeline-status`),
+
+    // Get compose data for client-side compositing
+    compose: (episodeId: string, storyboardId: string) =>
+      request<{
+        storyboardId: string
+        shotNumber: number
+        title: string
+        videoUrl: string
+        audioUrl: string | null
+        dialogue: string | null
+        dialogueChar: string | null
+        duration: number
+        composeInstructions: {
+          hasVideo: boolean
+          hasAudio: boolean
+          hasSubtitle: boolean
+          steps: string[]
+        }
+      }>(`/api/episodes/${episodeId}/compose?storyboardId=${storyboardId}`),
+
+    // Save composed result URL
+    saveComposed: (episodeId: string, storyboardId: string, composedUrl: string) =>
+      request<{ storyboard: Storyboard }>(`/api/episodes/${episodeId}/compose`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storyboardId, composedUrl }),
+      }),
   },
 
   // ---- Characters ----

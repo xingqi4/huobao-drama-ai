@@ -266,12 +266,31 @@ async function runSafeMigration(): Promise<void> {
     )
   `)
 
+  // AgentConfig table
+  await db.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "AgentConfig" (
+      "id" TEXT NOT NULL,
+      "agentType" TEXT NOT NULL,
+      "systemPrompt" TEXT,
+      "model" TEXT,
+      "temperature" REAL NOT NULL DEFAULT 0.7,
+      "maxTokens" INTEGER NOT NULL DEFAULT 4096,
+      "isActive" BOOLEAN NOT NULL DEFAULT true,
+      "createdAt" ${tsType} NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" ${tsType} NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "AgentConfig_pkey" PRIMARY KEY ("id")
+    )
+  `)
+
   // Create unique indexes (safe - IF NOT EXISTS)
   await db.$executeRawUnsafe(`
     CREATE UNIQUE INDEX IF NOT EXISTS "Episode_dramaId_episodeNumber_key" ON "Episode"("dramaId", "episodeNumber")
   `)
   await db.$executeRawUnsafe(`
     CREATE UNIQUE INDEX IF NOT EXISTS "AiProvider_category_provider_key" ON "AiProvider"("category", "provider")
+  `)
+  await db.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "AgentConfig_agentType_key" ON "AgentConfig"("agentType")
   `)
 
   // Add foreign key constraints — only on PostgreSQL (SQLite handles via Prisma)

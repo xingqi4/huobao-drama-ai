@@ -125,3 +125,16 @@ model AiProvider {
 
   @@unique([category, provider])
 }
+
+// ============ Agent Configuration ============
+model AgentConfig {
+  id          String   @id @default(cuid())
+  agentType   String   @unique  // "script_rewriter" | "extractor" | "storyboard_breaker" | "voice_assigner" | "grid_prompt_generator"
+  systemPrompt String?
+  model       String?
+  temperature Float    @default(0.7)
+  maxTokens   Int      @default(4096)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

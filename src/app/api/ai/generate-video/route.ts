@@ -3,6 +3,9 @@ import { aiClient } from '@/lib/ai-config'
 import { db } from '@/lib/db'
 
 // POST /api/ai/generate-video - Generate video for a storyboard shot (multi-provider)
+// Supports both text-to-video (no firstFrameUrl) and image-to-video (with firstFrameUrl)
+// When firstFrameUrl is provided, uses it as the first frame for image-to-video generation
+// When firstFrameUrl is absent, uses text-to-video (prompt-only)
 export async function POST(request: NextRequest) {
   try {
     const { storyboardId, prompt, firstFrameUrl } = await request.json()
@@ -36,9 +39,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // firstFrameUrl is optional - when present, it's image-to-video; when absent, text-to-video
     const frameUrl = firstFrameUrl || storyboard.firstFrameUrl || undefined
 
     // Use multi-provider aiClient
+    // The aiClient.generateVideo handles both text-to-video and image-to-video
     await aiClient.generateVideo(storyboardId, videoPrompt, frameUrl)
 
     // Fetch updated storyboard
@@ -46,7 +51,10 @@ export async function POST(request: NextRequest) {
       where: { id: storyboardId },
     })
 
-    return NextResponse.json({ storyboard: updatedStoryboard })
+    return NextResponse.json({
+      storyboard: updatedStoryboard,
+      mode: frameUrl ? 'image-to-video' : 'text-to-video',
+    })
   } catch (error) {
     console.error('Failed to generate video:', error)
     const message = error instanceof Error ? error.message : 'Unknown error'
