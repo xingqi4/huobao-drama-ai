@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db, ensureDatabaseReady } from '@/lib/db';
+import { db } from '@/lib/db';
 
 // GET /api/dramas/[id] - Get drama by id with episodes, characters, scenes
 export async function GET(
@@ -7,7 +7,6 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await ensureDatabaseReady();
     const { id } = await params;
     const drama = await db.drama.findUnique({
       where: { id },
@@ -38,7 +37,6 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await ensureDatabaseReady();
     const { id } = await params;
     const body = await request.json();
 
@@ -60,7 +58,6 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await ensureDatabaseReady();
     const { id } = await params;
 
     await db.drama.delete({

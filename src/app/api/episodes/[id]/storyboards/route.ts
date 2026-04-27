@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db, ensureDatabaseReady } from '@/lib/db';
+import { db } from '@/lib/db';
 
 // GET /api/episodes/[id]/storyboards - List storyboards for an episode
 export async function GET(
@@ -7,7 +7,6 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await ensureDatabaseReady();
     const { id: episodeId } = await params;
     const storyboards = await db.storyboard.findMany({
       where: { episodeId },
@@ -27,7 +26,6 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await ensureDatabaseReady();
     const { id: episodeId } = await params;
     const body = await request.json();
     const {

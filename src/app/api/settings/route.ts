@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, ensureDatabaseReady } from '@/lib/db'
+import { db } from '@/lib/db'
 import { getAllProviders, saveProviderConfig, setActiveProvider, PROVIDER_PRESETS, type AiCategory } from '@/lib/ai-config'
 
 // GET /api/settings - Return current settings with provider configs
 export async function GET() {
   try {
-    await ensureDatabaseReady()
     // Get all provider configs from DB
     const providers: Record<string, Awaited<ReturnType<typeof getAllProviders>>> = {}
     for (const cat of ['llm', 'image', 'video', 'tts'] as AiCategory[]) {
@@ -28,7 +27,6 @@ export async function GET() {
 // POST /api/settings - Save provider configs
 export async function POST(request: NextRequest) {
   try {
-    await ensureDatabaseReady()
     const data = await request.json()
     const { category, provider, name, apiKey, baseUrl, model, isActive } = data
 

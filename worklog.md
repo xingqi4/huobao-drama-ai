@@ -87,3 +87,40 @@ Stage Summary:
 - 管线完整6步，对标参考工程11步流程的核心部分
 - 5个SKILL.md提供Agent专业领域知识
 - 所有代码已推送到GitHub（commit f8f1b88）
+
+---
+Task ID: 1
+Agent: PostgreSQL Migration Agent
+Task: Migrate from SQLite to PostgreSQL for Vercel deployment
+
+Work Log:
+- Changed prisma/schema.prisma: `provider = "sqlite"` → `provider = "postgresql"`, added `directUrl = env("DIRECT_URL")` for Vercel connection pooling
+- Rewrote src/lib/db.ts (~340 lines → ~85 lines): removed all raw SQL migration code (`runSafeMigration`, `ensureDatabaseReady`, `addColumnIfNotExists`, `isPostgres`), kept URL resolution logic and PrismaClient singleton
+- Rewrote src/app/api/migrate/route.ts: replaced ~418 lines of raw SQL with clean `prisma db push` via `execFile`, GET endpoint now queries `information_schema.tables` for PostgreSQL only
+- Updated .env: changed `DATABASE_URL=file:/home/z/my-project/db/custom.db` to `postgresql://user:password@localhost:5432/huobao_drama`, added `DIRECT_URL`
+- Updated .env.example: same PostgreSQL placeholder URLs, removed SQLite reference
+- Removed `ensureDatabaseReady` imports and calls from 9 API route files:
+  - src/app/api/settings/route.ts
+  - src/app/api/storyboards/[id]/route.ts
+  - src/app/api/dramas/[id]/route.ts
+  - src/app/api/dramas/[id]/scenes/route.ts
+  - src/app/api/dramas/[id]/episodes/route.ts
+  - src/app/api/dramas/[id]/characters/route.ts
+  - src/app/api/dramas/route.ts
+  - src/app/api/episodes/[id]/storyboards/route.ts
+  - src/app/api/episodes/[id]/route.ts
+- Updated src/app/api/health/route.ts: removed SQLite detection logic
+- Updated src/lib/api.ts: removed force migration logic, simplified retry to 2 attempts
+- Deleted prisma/schema.development.prisma (SQLite backup)
+- Deleted prisma/schema.production.prisma (obsolete, main schema is now PostgreSQL)
+- Simplified scripts/build.js: removed SQLite↔PostgreSQL switching logic
+- Simplified scripts/postinstall.js: removed SQLite backup/restore logic
+- All lint checks pass clean
+- Prisma schema validates successfully
+- Prisma client generates successfully for PostgreSQL
+
+Stage Summary:
+- Project fully migrated from SQLite to PostgreSQL-only
+- No raw SQL migration code remains — schema managed via `prisma db push`
+- All API routes cleaned of `ensureDatabaseReady` calls
+- Ready for Vercel deployment with PostgreSQL (e.g., Vercel Postgres / Neon / Supabase)

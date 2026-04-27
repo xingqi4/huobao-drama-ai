@@ -71,8 +71,8 @@ async function ensureDbReady(): Promise<void> {
   if (_dbInitPromise) return _dbInitPromise
 
   _dbInitPromise = (async () => {
-    // Try up to 3 times to initialize the database
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    // Try up to 2 times to initialize the database
+    for (let attempt = 1; attempt <= 2; attempt++) {
       try {
         const res = await fetch('/api/migrate', { method: 'POST' })
         if (res.ok) {
@@ -81,28 +81,18 @@ async function ensureDbReady(): Promise<void> {
           _dbInitialized = true
           return
         }
-        // If server returned error, try force migration on next attempt
-        if (attempt < 3) {
+        if (attempt < 2) {
           console.warn(`[api] Migration attempt ${attempt} failed, retrying...`)
           await new Promise((r) => setTimeout(r, 1000 * attempt))
-        } else {
-          // Last attempt: try force migration
-          console.warn('[api] All attempts failed, trying force migration...')
-          const forceRes = await fetch('/api/migrate?force=true', { method: 'POST' })
-          if (forceRes.ok) {
-            console.log('[api] Force migration succeeded')
-            _dbInitialized = true
-            return
-          }
         }
       } catch (err) {
         console.warn(`[api] Database init attempt ${attempt} error:`, err)
-        if (attempt < 3) {
+        if (attempt < 2) {
           await new Promise((r) => setTimeout(r, 1000 * attempt))
         }
       }
     }
-    // Even if migration fails, don't block the app - server-side ensureDatabaseReady will try again
+    // Even if migration fails, don't block the app
     _dbInitialized = true
   })()
 

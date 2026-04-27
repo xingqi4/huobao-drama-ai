@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db, ensureDatabaseReady } from '@/lib/db';
+import { db } from '@/lib/db';
 
 // PATCH /api/storyboards/[id] - Update storyboard
 export async function PATCH(
@@ -7,7 +7,6 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await ensureDatabaseReady();
     const { id } = await params;
     const body = await request.json();
 

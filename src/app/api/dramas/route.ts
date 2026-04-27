@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db, ensureDatabaseReady } from '@/lib/db';
+import { db } from '@/lib/db';
 
 // GET /api/dramas - List all dramas with counts
 export async function GET() {
   try {
-    await ensureDatabaseReady();
-
     const dramas = await db.drama.findMany({
       orderBy: { updatedAt: 'desc' },
       include: {
@@ -43,8 +41,6 @@ export async function GET() {
 // POST /api/dramas - Create a new drama
 export async function POST(request: NextRequest) {
   try {
-    await ensureDatabaseReady();
-
     const body = await request.json();
     const { title, description, genre, style } = body;
 

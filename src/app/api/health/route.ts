@@ -12,7 +12,7 @@ export async function GET() {
   diagnostics.databaseUrlSet = !!dbUrl
   diagnostics.databaseUrlLength = dbUrl ? dbUrl.length : 0
   diagnostics.databaseUrlProvider = dbUrl
-    ? dbUrl.startsWith('file:') ? 'sqlite' : dbUrl.startsWith('postgres') ? 'postgresql' : 'unknown'
+    ? dbUrl.startsWith('postgres') ? 'postgresql' : 'unknown'
     : 'NOT SET'
 
   // Mask the URL for security
@@ -85,7 +85,7 @@ export async function GET() {
       resolvedProvider: nonPoolingUrl ? 'non-pooling' :
         prismaUrl ? 'prisma-pooled' :
         dbUrl ? 'database-url' :
-        genericUrl ? 'generic' : 'sqlite-fallback',
+        genericUrl ? 'generic' : 'no-url-found',
     }
   } catch (err) {
     diagnostics.urlResolution = `error: ${err instanceof Error ? err.message : String(err)}`
