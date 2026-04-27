@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore, type EpisodeDetail, type Character, type Scene, type Storyboard } from '@/lib/store'
 import { api } from '@/lib/api'
@@ -41,6 +41,13 @@ import {
   Play,
   Copy,
   Upload,
+  Download,
+  Wand2,
+  Layers,
+  Music,
+  Eye,
+  FileVideo,
+  RotateCcw,
 } from 'lucide-react'
 
 // ── Types ────────────────────────────────────────────────────
@@ -161,6 +168,14 @@ export function EpisodeWorkspace() {
     total: number
     message: string
   } | null>(null)
+  const [generatingAllTts, setGeneratingAllTts] = useState(false)
+  const [composing, setComposing] = useState<string | null>(null)
+  const [composingAll, setComposingAll] = useState(false)
+  const [previewMode, setPreviewMode] = useState(false)
+  const [currentPreviewShot, setCurrentPreviewShot] = useState(0)
+  const [exporting, setExporting] = useState(false)
+  const previewVideoRef = useRef<HTMLVideoElement>(null)
+  const previewAudioRef = useRef<HTMLAudioElement>(null)
 
   // ── Fetch episode data ─────────────────────────────────────
 
@@ -202,7 +217,7 @@ export function EpisodeWorkspace() {
         case 'storyboard':
           return storyboards.length > 0
         case 'production':
-          return storyboards.some((s) => s.firstFrameUrl)
+          return storyboards.some((s) => s.composedUrl || s.videoUrl)
         default:
           return false
       }
@@ -558,6 +573,209 @@ export function EpisodeWorkspace() {
       toast({ title: '上传失败', description: String(err), variant: 'destructive' })
     } finally {
       setUploadingField(null)
+    }
+  }
+
+  // ── Generate all TTS ─────────────────────────────────────────
+
+  const handleGenerateAllTts = async () => {
+    const pending = storyboards.filter((s) => s.dialogue && !s.ttsAudioUrl)
+    if (pending.length === 0) {
+      toast({ title: '没有可生成的配音（需要镜头有对白）' })
+      return
+    }
+    setGeneratingAllTts(true)
+    setBatchProgress({ current: 0, total: pending.length, message: '生成配音中...' })
+    let successCount = 0
+    for (let i = 0; i < pending.length; i++) {
+      const sb = pending[i]
+      setGeneratingTts(sb.id)
+      setBatchProgress({ current: i + 1, total: pending.length, message: `生成配音 ${i + 1}/${pending.length}...` })
+      try {
+        await api.ai.generateTts(sb.id, sb.dialogue!)
+        successCount++
+      } catch {
+        // Continue with next shot even if one fails
+      }
+    }
+    setGeneratingTts(null)
+    setBatchProgress(null)
+    setGeneratingAllTts(false)
+    toast({ title: `${successCount}/${pending.length}个镜头配音生成完毕` })
+    await fetchEpisode()
+  }
+
+  // ── Compose a single shot (mark as composed) ────────────────
+
+  const handleComposeShot = async (storyboard: Storyboard) => {
+    if (!storyboard.videoUrl) {
+      toast({ title: '该镜头没有视频，无法合成', variant: 'destructive' })
+      return
+    }
+    setComposing(storyboard.id)
+    try {
+      // Mark as composed — the video URL serves as the composed URL
+      // Audio will be overlaid during preview/export
+      await api.storyboards.update(storyboard.id, { composedUrl: storyboard.videoUrl })
+      toast({ title: `镜头 ${storyboard.shotNumber} 已合成` })
+      await fetchEpisode()
+    } catch (err) {
+      toast({ title: '合成失败', description: String(err), variant: 'destructive' })
+    } finally {
+      setComposing(null)
+    }
+  }
+
+  // ── Compose all shots ───────────────────────────────────────
+
+  const handleComposeAll = async () => {
+    const composable = storyboards.filter((s) => s.videoUrl && !s.composedUrl)
+    if (composable.length === 0) {
+      toast({ title: '没有可合成的镜头（需要有视频）' })
+      return
+    }
+    setComposingAll(true)
+    setBatchProgress({ current: 0, total: composable.length, message: '合成中...' })
+    let successCount = 0
+    for (let i = 0; i < composable.length; i++) {
+      const sb = composable[i]
+      setComposing(sb.id)
+      setBatchProgress({ current: i + 1, total: composable.length, message: `合成镜头 ${i + 1}/${composable.length}...` })
+      try {
+        await api.storyboards.update(sb.id, { composedUrl: sb.videoUrl })
+        successCount++
+      } catch {
+        // Continue with next shot even if one fails
+      }
+    }
+    setComposing(null)
+    setBatchProgress(null)
+    setComposingAll(false)
+    toast({ title: `${successCount}/${composable.length}个镜头合成完毕` })
+    await fetchEpisode()
+  }
+
+  // ── Preview all shots in sequence ───────────────────────────
+
+  const handleStartPreview = () => {
+    const videoShots = storyboards.filter((s) => s.videoUrl)
+    if (videoShots.length === 0) {
+      toast({ title: '没有可预览的镜头视频', variant: 'destructive' })
+      return
+    }
+    setCurrentPreviewShot(0)
+    setPreviewMode(true)
+  }
+
+  const handlePreviewEnded = () => {
+    const videoShots = storyboards.filter((s) => s.videoUrl)
+    if (currentPreviewShot < videoShots.length - 1) {
+      setCurrentPreviewShot((prev) => prev + 1)
+    } else {
+      setPreviewMode(false)
+      setCurrentPreviewShot(0)
+    }
+  }
+
+  // ── Export final video (client-side canvas + MediaRecorder) ─
+
+  const handleExport = async () => {
+    const videoShots = storyboards.filter((s) => s.videoUrl)
+    if (videoShots.length === 0) {
+      toast({ title: '没有可导出的镜头视频', variant: 'destructive' })
+      return
+    }
+    setExporting(true)
+    try {
+      const canvas = document.createElement('canvas')
+      canvas.width = 1024
+      canvas.height = 576
+      const ctx = canvas.getContext('2d')
+      if (!ctx) throw new Error('Canvas context not available')
+
+      const stream = canvas.captureStream(30)
+      const recorder = new MediaRecorder(stream, {
+        mimeType: MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+          ? 'video/webm;codecs=vp9'
+          : 'video/webm',
+        videoBitsPerSecond: 5000000,
+      })
+
+      const chunks: Blob[] = []
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data)
+      }
+
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        recorder.onstop = () => {
+          resolve(new Blob(chunks, { type: 'video/webm' }))
+        }
+        recorder.onerror = reject
+        recorder.start()
+      })
+
+      // Play each shot video onto the canvas
+      const tempVideo = document.createElement('video')
+      tempVideo.crossOrigin = 'anonymous'
+      tempVideo.playsInline = true
+      tempVideo.muted = true
+
+      for (let i = 0; i < videoShots.length; i++) {
+        const shot = videoShots[i]
+        setBatchProgress({
+          current: i + 1,
+          total: videoShots.length,
+          message: `导出镜头 ${i + 1}/${videoShots.length}...`,
+        })
+
+        await new Promise<void>((resolveShot) => {
+          tempVideo.src = shot.videoUrl!
+          tempVideo.onloadeddata = () => {
+            tempVideo.play()
+          }
+          tempVideo.onended = () => {
+            resolveShot()
+          }
+          tempVideo.onerror = () => {
+            resolveShot() // Skip on error
+          }
+
+          // Draw frames
+          const drawFrame = () => {
+            if (tempVideo.paused || tempVideo.ended) {
+              // Draw final frame and resolve
+              ctx!.drawImage(tempVideo, 0, 0, canvas.width, canvas.height)
+              return
+            }
+            ctx!.drawImage(tempVideo, 0, 0, canvas.width, canvas.height)
+            requestAnimationFrame(drawFrame)
+          }
+          tempVideo.onplay = () => {
+            drawFrame()
+          }
+        })
+
+        // Small pause between shots
+        await new Promise((r) => setTimeout(r, 300))
+      }
+
+      recorder.stop()
+      const resultBlob = await blob
+
+      // Download
+      const url = URL.createObjectURL(resultBlob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `episode-export-${Date.now()}.webm`
+      a.click()
+      URL.revokeObjectURL(url)
+
+      toast({ title: '视频导出成功' })
+    } catch (err) {
+      toast({ title: '导出失败', description: String(err), variant: 'destructive' })
+    } finally {
+      setExporting(false)
+      setBatchProgress(null)
     }
   }
 
@@ -1081,25 +1299,61 @@ export function EpisodeWorkspace() {
       )
     }
 
-    // Storyboard cards
+    // Derived data for toolbar
+    const pendingImageShots = storyboards.filter((s) => !s.firstFrameUrl && s.imagePrompt)
+    const pendingVideoShots = storyboards.filter((s) => s.firstFrameUrl && !s.videoUrl && (s.videoPrompt || s.imagePrompt))
+
+    // Storyboard cards with media preview + action buttons
     return (
       <div className="flex flex-col h-full">
-        <div className="flex items-center justify-between px-6 py-3 border-b border-border/50">
+        <div className="flex items-center justify-between px-6 py-3 border-b border-border/50 flex-wrap gap-2">
           <div className="flex items-center gap-3">
             <span className="text-xs font-mono text-primary/80">04</span>
             <h2 className="text-sm font-semibold">分镜列表</h2>
             <Badge variant="secondary" className="text-[10px]">{storyboards.length} 镜</Badge>
             {episode?.storyboardStatus && statusBadge(episode.storyboardStatus)}
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleGenerateStoryboard}
-            disabled={aiLoading || isStoryboarding}
-          >
-            <RefreshCw className="size-3.5" />
-            重新生成
-          </Button>
+          <div className="flex items-center gap-2 flex-wrap">
+            {batchProgress && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="size-3 animate-spin" />
+                <span>{batchProgress.message}</span>
+                <Progress value={(batchProgress.current / batchProgress.total) * 100} className="h-1.5 w-20" />
+              </div>
+            )}
+            {pendingVideoShots.length > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleGenerateAllVideos}
+                disabled={!!generatingVideo || !!generatingShotImg}
+              >
+                {generatingVideo ? <Loader2 className="size-3.5 animate-spin" /> : <Video className="size-3.5" />}
+                生成全部视频
+              </Button>
+            )}
+            {pendingImageShots.length > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleGenerateAllImages}
+                disabled={!!generatingShotImg || !!generatingVideo}
+                className="amber-glow"
+              >
+                {generatingShotImg ? <Loader2 className="size-3.5 animate-spin" /> : <ImageIcon className="size-3.5" />}
+                生成全部图片
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleGenerateStoryboard}
+              disabled={aiLoading || isStoryboarding}
+            >
+              <RefreshCw className="size-3.5" />
+              重新生成
+            </Button>
+          </div>
         </div>
 
         <ScrollArea className="flex-1">
@@ -1140,6 +1394,194 @@ export function EpisodeWorkspace() {
                       <p className="text-xs text-muted-foreground mt-1">{sb.action}</p>
                     </div>
                   </div>
+
+                  {/* Media preview area */}
+                  <div className="ml-12 mb-3">
+                    {(sb.videoUrl || sb.firstFrameUrl) ? (
+                      <div className="relative rounded-lg overflow-hidden border border-border/50 max-w-sm">
+                        {sb.videoUrl ? (
+                          <video
+                            src={sb.videoUrl}
+                            controls
+                            className="w-full aspect-video object-cover"
+                            poster={sb.firstFrameUrl ?? undefined}
+                          />
+                        ) : (
+                          <img
+                            src={sb.firstFrameUrl!}
+                            alt={`镜头 ${sb.shotNumber}`}
+                            className="w-full aspect-video object-cover"
+                          />
+                        )}
+                        {(generatingShotImg === sb.id || generatingVideo === sb.id) && (
+                          <div className="absolute inset-0 bg-background/60 flex items-center justify-center">
+                            <div className="text-center">
+                              <Loader2 className="size-6 text-primary animate-spin mx-auto mb-1" />
+                              <p className="text-[10px] text-muted-foreground">
+                                {generatingVideo === sb.id ? '生成视频中...' : '生成图片中...'}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="max-w-sm aspect-video rounded-lg bg-muted/50 border border-dashed border-border/50 flex items-center justify-center">
+                        <div className="text-center">
+                          <Camera className="size-6 text-muted-foreground/30 mx-auto mb-1" />
+                          <p className="text-[10px] text-muted-foreground/50">暂无素材</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Status indicators */}
+                  <div className="ml-12 mb-3 flex items-center gap-2 flex-wrap">
+                    {sb.firstFrameUrl ? (
+                      <Badge className="status-completed text-[9px] px-1.5 py-0 gap-0.5">
+                        <Check className="size-2.5" /> 图片
+                      </Badge>
+                    ) : null}
+                    {sb.videoUrl ? (
+                      <Badge className="status-completed text-[9px] px-1.5 py-0 gap-0.5">
+                        <Check className="size-2.5" /> 视频
+                      </Badge>
+                    ) : null}
+                    {sb.ttsAudioUrl ? (
+                      <Badge className="status-completed text-[9px] px-1.5 py-0 gap-0.5">
+                        <Check className="size-2.5" /> 配音
+                      </Badge>
+                    ) : null}
+                    {!sb.firstFrameUrl && !sb.videoUrl && !sb.ttsAudioUrl && (
+                      <Badge variant="outline" className="text-[9px] px-1.5 py-0">待生成</Badge>
+                    )}
+                  </div>
+
+                  {/* Quick action buttons row */}
+                  <div className="ml-12 mb-3 flex items-center gap-1.5 flex-wrap">
+                    {!sb.firstFrameUrl && sb.imagePrompt && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => handleGenerateShotImage(sb)}
+                        disabled={generatingShotImg === sb.id}
+                        className="h-7 text-[11px] px-2.5"
+                      >
+                        {generatingShotImg === sb.id ? (
+                          <Loader2 className="size-3 animate-spin" />
+                        ) : (
+                          <ImageIcon className="size-3" />
+                        )}
+                        生成图片
+                      </Button>
+                    )}
+                    {sb.firstFrameUrl && !sb.videoUrl && (sb.videoPrompt || sb.imagePrompt) && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => handleGenerateVideo(sb)}
+                        disabled={generatingVideo === sb.id}
+                        className="h-7 text-[11px] px-2.5"
+                      >
+                        {generatingVideo === sb.id ? (
+                          <Loader2 className="size-3 animate-spin" />
+                        ) : (
+                          <Video className="size-3" />
+                        )}
+                        生成视频
+                      </Button>
+                    )}
+                    {sb.dialogue && !sb.ttsAudioUrl && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => handleGenerateTts(sb)}
+                        disabled={generatingTts === sb.id}
+                        className="h-7 text-[11px] px-2.5"
+                      >
+                        {generatingTts === sb.id ? (
+                          <Loader2 className="size-3 animate-spin" />
+                        ) : (
+                          <Mic className="size-3" />
+                        )}
+                        生成配音
+                      </Button>
+                    )}
+                    {/* Upload buttons */}
+                    {!sb.firstFrameUrl && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 text-[11px] px-2.5 text-muted-foreground hover:text-foreground"
+                        disabled={uploadingField === `sb-img-${sb.id}`}
+                        onClick={() => {
+                          const input = document.getElementById(`upload-sb-img-${sb.id}`) as HTMLInputElement
+                          input?.click()
+                        }}
+                      >
+                        {uploadingField === `sb-img-${sb.id}` ? (
+                          <Loader2 className="size-3 animate-spin" />
+                        ) : (
+                          <Upload className="size-3" />
+                        )}
+                        上传图片
+                      </Button>
+                    )}
+                    {sb.firstFrameUrl && !sb.videoUrl && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 text-[11px] px-2.5 text-muted-foreground hover:text-foreground"
+                        disabled={uploadingField === `sb-vid-${sb.id}`}
+                        onClick={() => {
+                          const input = document.getElementById(`upload-sb-vid-${sb.id}`) as HTMLInputElement
+                          input?.click()
+                        }}
+                      >
+                        {uploadingField === `sb-vid-${sb.id}` ? (
+                          <Loader2 className="size-3 animate-spin" />
+                        ) : (
+                          <Upload className="size-3" />
+                        )}
+                        上传视频
+                      </Button>
+                    )}
+                    {/* Hidden file inputs */}
+                    <input
+                      id={`upload-sb-img-${sb.id}`}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) handleUpload(file, { storyboardId: sb.id, fieldType: 'firstFrameUrl' }, `sb-img-${sb.id}`)
+                        e.target.value = ''
+                      }}
+                    />
+                    <input
+                      id={`upload-sb-vid-${sb.id}`}
+                      type="file"
+                      accept="video/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) handleUpload(file, { storyboardId: sb.id, fieldType: 'videoUrl' }, `sb-vid-${sb.id}`)
+                        e.target.value = ''
+                      }}
+                    />
+                  </div>
+
+                  {/* TTS Audio player */}
+                  {sb.ttsAudioUrl && (
+                    <div className="ml-12 mb-3 flex items-center gap-2">
+                      <Mic className="size-3 text-primary/70 flex-shrink-0" />
+                      <audio
+                        src={sb.ttsAudioUrl}
+                        controls
+                        className="h-6 flex-1 [&::-webkit-media-controls-panel]:bg-muted/50"
+                        style={{ minWidth: 0 }}
+                      />
+                    </div>
+                  )}
 
                   {/* Dialogue */}
                   {sb.dialogue && (
@@ -1234,60 +1676,35 @@ export function EpisodeWorkspace() {
 
   const renderProductionPanel = () => {
     const hasAnyStoryboard = storyboards.length > 0
-    const pendingShots = storyboards.filter((s) => !s.firstFrameUrl && s.imagePrompt)
-    const completedShots = storyboards.filter((s) => s.firstFrameUrl)
-    const pendingVideoShots = storyboards.filter((s) => s.firstFrameUrl && !s.videoUrl && (s.videoPrompt || s.imagePrompt))
+    const totalShots = storyboards.length
+    const shotsWithImage = storyboards.filter((s) => s.firstFrameUrl).length
+    const shotsWithVideo = storyboards.filter((s) => s.videoUrl).length
+    const shotsWithTts = storyboards.filter((s) => s.ttsAudioUrl).length
+    const shotsComposed = storyboards.filter((s) => s.composedUrl).length
+    const pendingTtsShots = storyboards.filter((s) => s.dialogue && !s.ttsAudioUrl)
+
+    // Get video shots for preview
+    const videoShots = storyboards.filter((s) => s.videoUrl)
+    const currentPreviewStoryboard = previewMode && videoShots[currentPreviewShot]
 
     return (
       <div className="flex flex-col h-full">
-        <div className="flex items-center justify-between px-6 py-3 border-b border-border/50">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-3 border-b border-border/50 flex-wrap gap-2">
           <div className="flex items-center gap-3">
             <span className="text-xs font-mono text-primary/80">05</span>
-            <h2 className="text-sm font-semibold">制作</h2>
-            {hasAnyStoryboard && (
-              <Badge variant="secondary" className="text-[10px]">
-                {completedShots.length}/{storyboards.length}
-              </Badge>
-            )}
+            <div>
+              <h2 className="text-sm font-semibold">后期制作</h2>
+              <p className="text-[10px] text-muted-foreground">配音合成 · 视频预览 · 成片导出</p>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {batchProgress && (
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Loader2 className="size-3 animate-spin" />
                 <span>{batchProgress.message}</span>
-                <Progress value={(batchProgress.current / batchProgress.total) * 100} className="h-1.5 w-24" />
-                <span>{batchProgress.current}/{batchProgress.total}</span>
+                <Progress value={(batchProgress.current / batchProgress.total) * 100} className="h-1.5 w-20" />
               </div>
-            )}
-            {pendingVideoShots.length > 0 && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleGenerateAllVideos}
-                disabled={!!generatingVideo || !!generatingShotImg}
-              >
-                {generatingVideo ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <Video className="size-3.5" />
-                )}
-                生成全部视频
-              </Button>
-            )}
-            {pendingShots.length > 0 && (
-              <Button
-                size="sm"
-                onClick={handleGenerateAllImages}
-                disabled={!!generatingShotImg || !!generatingVideo}
-                className="amber-glow"
-              >
-                {generatingShotImg ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <ImageIcon className="size-3.5" />
-                )}
-                生成全部图片
-              </Button>
             )}
           </div>
         </div>
@@ -1298,9 +1715,9 @@ export function EpisodeWorkspace() {
               <div className="mx-auto size-16 rounded-full bg-muted flex items-center justify-center mb-5">
                 <Clapperboard className="size-8 text-muted-foreground/50" />
               </div>
-              <h2 className="text-lg font-semibold mb-2">制作区</h2>
+              <h2 className="text-lg font-semibold mb-2">后期制作</h2>
               <p className="text-sm text-muted-foreground">
-                请先在「分镜」步骤中生成分镜后再进行制作
+                请先在「分镜」步骤中生成分镜后再进行后期制作
               </p>
               <Button
                 variant="outline"
@@ -1313,147 +1730,303 @@ export function EpisodeWorkspace() {
           </div>
         ) : (
           <ScrollArea className="flex-1">
-            <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {storyboards.map((sb) => (
-                <Card key={sb.id} className="border-border/50 py-0 gap-0 overflow-hidden">
-                  {/* Media area — video or image */}
-                  <div className="aspect-video bg-muted/50 relative group">
-                    {sb.videoUrl ? (
-                      <video
-                        src={sb.videoUrl}
-                        controls
-                        className="w-full h-full object-cover"
-                        poster={sb.firstFrameUrl ?? undefined}
-                      />
-                    ) : sb.firstFrameUrl ? (
-                      <img
-                        src={sb.firstFrameUrl}
-                        alt={`Shot ${sb.shotNumber}`}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="text-center">
-                          <Camera className="size-8 text-muted-foreground/30 mx-auto mb-2" />
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => handleGenerateShotImage(sb)}
-                            disabled={generatingShotImg === sb.id || !sb.imagePrompt}
-                            className="text-xs"
-                          >
-                            {generatingShotImg === sb.id ? (
-                              <Loader2 className="size-3 animate-spin" />
-                            ) : (
-                              <ImageIcon className="size-3" />
-                            )}
-                            生成图片
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                    {(generatingShotImg === sb.id || generatingVideo === sb.id) && (
-                      <div className="absolute inset-0 bg-background/60 flex items-center justify-center">
-                        <div className="text-center">
-                          <Loader2 className="size-8 text-primary animate-spin mx-auto mb-2" />
-                          <p className="text-xs text-muted-foreground">
-                            {generatingVideo === sb.id ? '生成视频中...' : '生成图片中...'}
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  {/* Shot info */}
-                  <CardContent className="p-3 space-y-2">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs font-bold text-primary">
-                        #{String(sb.shotNumber).padStart(2, '0')}
-                      </span>
-                      <span className="text-xs font-medium truncate">{sb.title}</span>
-                      <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-auto">
-                        {shotTypeLabel(sb.shotType)}
-                      </Badge>
+            <div className="p-6 space-y-6">
+              {/* Pipeline status bar */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <Card className="border-border/50 py-0 gap-0">
+                  <CardContent className="p-3 text-center">
+                    <div className="flex items-center justify-center gap-1.5 mb-1">
+                      <ImageIcon className="size-3.5 text-primary/70" />
+                      <span className="text-[10px] text-muted-foreground">图片</span>
                     </div>
-                    {/* Status badges */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {sb.firstFrameUrl ? (
-                        <Badge className="status-completed text-[9px] px-1 py-0">图片</Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-[9px] px-1 py-0">待生成</Badge>
-                      )}
-                      {sb.videoUrl ? (
-                        <Badge className="status-completed text-[9px] px-1 py-0">视频</Badge>
-                      ) : null}
-                      {sb.ttsAudioUrl ? (
-                        <Badge className="status-completed text-[9px] px-1 py-0">配音</Badge>
-                      ) : null}
-                    </div>
-                    {/* Action buttons */}
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {sb.firstFrameUrl && !sb.videoUrl && (sb.videoPrompt || sb.imagePrompt) && (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => handleGenerateVideo(sb)}
-                          disabled={generatingVideo === sb.id}
-                          className="h-6 text-[10px] px-2"
-                        >
-                          {generatingVideo === sb.id ? (
-                            <Loader2 className="size-2.5 animate-spin" />
-                          ) : (
-                            <Video className="size-2.5" />
-                          )}
-                          生成视频
-                        </Button>
-                      )}
-                      {sb.dialogue && !sb.ttsAudioUrl && (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => handleGenerateTts(sb)}
-                          disabled={generatingTts === sb.id}
-                          className="h-6 text-[10px] px-2"
-                        >
-                          {generatingTts === sb.id ? (
-                            <Loader2 className="size-2.5 animate-spin" />
-                          ) : (
-                            <Mic className="size-2.5" />
-                          )}
-                          生成配音
-                        </Button>
-                      )}
-                      {!sb.firstFrameUrl && sb.imagePrompt && (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => handleGenerateShotImage(sb)}
-                          disabled={generatingShotImg === sb.id}
-                          className="h-6 text-[10px] px-2"
-                        >
-                          {generatingShotImg === sb.id ? (
-                            <Loader2 className="size-2.5 animate-spin" />
-                          ) : (
-                            <ImageIcon className="size-2.5" />
-                          )}
-                          生成图片
-                        </Button>
-                      )}
-                    </div>
-                    {/* TTS Audio player */}
-                    {sb.ttsAudioUrl && (
-                      <div className="flex items-center gap-2 pt-1">
-                        <Mic className="size-3 text-primary/70 flex-shrink-0" />
-                        <audio
-                          src={sb.ttsAudioUrl}
-                          controls
-                          className="h-6 w-full [&::-webkit-media-controls-panel]:bg-muted/50"
-                          style={{ minWidth: 0 }}
-                        />
-                      </div>
-                    )}
+                    <div className="text-lg font-bold">{shotsWithImage}<span className="text-xs font-normal text-muted-foreground">/{totalShots}</span></div>
+                    <Progress value={totalShots > 0 ? (shotsWithImage / totalShots) * 100 : 0} className="h-1 mt-1.5" />
                   </CardContent>
                 </Card>
-              ))}
+                <Card className="border-border/50 py-0 gap-0">
+                  <CardContent className="p-3 text-center">
+                    <div className="flex items-center justify-center gap-1.5 mb-1">
+                      <Video className="size-3.5 text-primary/70" />
+                      <span className="text-[10px] text-muted-foreground">视频</span>
+                    </div>
+                    <div className="text-lg font-bold">{shotsWithVideo}<span className="text-xs font-normal text-muted-foreground">/{totalShots}</span></div>
+                    <Progress value={totalShots > 0 ? (shotsWithVideo / totalShots) * 100 : 0} className="h-1 mt-1.5" />
+                  </CardContent>
+                </Card>
+                <Card className="border-border/50 py-0 gap-0">
+                  <CardContent className="p-3 text-center">
+                    <div className="flex items-center justify-center gap-1.5 mb-1">
+                      <Mic className="size-3.5 text-primary/70" />
+                      <span className="text-[10px] text-muted-foreground">配音</span>
+                    </div>
+                    <div className="text-lg font-bold">{shotsWithTts}<span className="text-xs font-normal text-muted-foreground">/{totalShots}</span></div>
+                    <Progress value={totalShots > 0 ? (shotsWithTts / totalShots) * 100 : 0} className="h-1 mt-1.5" />
+                  </CardContent>
+                </Card>
+                <Card className="border-border/50 py-0 gap-0">
+                  <CardContent className="p-3 text-center">
+                    <div className="flex items-center justify-center gap-1.5 mb-1">
+                      <Layers className="size-3.5 text-primary/70" />
+                      <span className="text-[10px] text-muted-foreground">合成</span>
+                    </div>
+                    <div className="text-lg font-bold">{shotsComposed}<span className="text-xs font-normal text-muted-foreground">/{totalShots}</span></div>
+                    <Progress value={totalShots > 0 ? (shotsComposed / totalShots) * 100 : 0} className="h-1 mt-1.5" />
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Toolbar actions */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleGenerateAllTts}
+                  disabled={generatingAllTts || !!generatingTts || pendingTtsShots.length === 0}
+                >
+                  {generatingAllTts || generatingTts ? <Loader2 className="size-3.5 animate-spin" /> : <Music className="size-3.5" />}
+                  生成全部配音
+                  {pendingTtsShots.length > 0 && (
+                    <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-1">{pendingTtsShots.length}</Badge>
+                  )}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleComposeAll}
+                  disabled={composingAll || !!composing || shotsWithVideo === 0}
+                >
+                  {composingAll || composing ? <Loader2 className="size-3.5 animate-spin" /> : <Layers className="size-3.5" />}
+                  一键合成
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleStartPreview}
+                  disabled={videoShots.length === 0}
+                >
+                  <Eye className="size-3.5" />
+                  预览完整视频
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleExport}
+                  disabled={exporting || videoShots.length === 0}
+                  className="amber-glow"
+                >
+                  {exporting ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
+                  导出成片
+                </Button>
+              </div>
+
+              {/* Timeline view */}
+              <div>
+                <h3 className="text-xs font-semibold text-muted-foreground mb-3 flex items-center gap-1.5">
+                  <Film className="size-3.5" />
+                  镜头时间线
+                </h3>
+                <div className="space-y-2">
+                  {storyboards.map((sb) => {
+                    const hasImage = !!sb.firstFrameUrl
+                    const hasVideo = !!sb.videoUrl
+                    const hasTts = !!sb.ttsAudioUrl
+                    const isComposed = !!sb.composedUrl
+                    const isProcessing = generatingShotImg === sb.id || generatingVideo === sb.id || generatingTts === sb.id || composing === sb.id
+
+                    return (
+                      <Card key={sb.id} className="border-border/50 py-0 gap-0">
+                        <CardContent className="p-3">
+                          <div className="flex items-center gap-3">
+                            {/* Shot number + thumbnail */}
+                            <div className="flex-shrink-0">
+                              {sb.firstFrameUrl ? (
+                                <div className="relative size-14 rounded overflow-hidden border border-border/50">
+                                  <img src={sb.firstFrameUrl} alt={`镜头${sb.shotNumber}`} className="w-full h-full object-cover" />
+                                  {sb.videoUrl && (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                                      <Play className="size-3.5 text-white" />
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="size-14 rounded bg-muted/50 flex items-center justify-center">
+                                  <span className="text-xs font-bold text-muted-foreground/50">
+                                    {String(sb.shotNumber).padStart(2, '0')}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Shot info + pipeline */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1.5">
+                                <span className="text-xs font-bold text-primary">#{String(sb.shotNumber).padStart(2, '0')}</span>
+                                <span className="text-xs font-medium truncate">{sb.title}</span>
+                                {isProcessing && (
+                                  <Loader2 className="size-3 text-primary animate-spin flex-shrink-0" />
+                                )}
+                              </div>
+                              {/* Pipeline progress */}
+                              <div className="flex items-center gap-1 text-[10px]">
+                                <span className={hasImage ? 'text-emerald-500' : 'text-muted-foreground/40'} title="图片">
+                                  🖼️
+                                </span>
+                                <span className="text-muted-foreground/30">→</span>
+                                <span className={hasVideo ? 'text-emerald-500' : 'text-muted-foreground/40'} title="视频">
+                                  🎬
+                                </span>
+                                <span className="text-muted-foreground/30">→</span>
+                                <span className={hasTts ? 'text-emerald-500' : 'text-muted-foreground/40'} title="配音">
+                                  🎤
+                                </span>
+                                <span className="text-muted-foreground/30">→</span>
+                                <span className={isComposed ? 'text-emerald-500' : 'text-muted-foreground/40'} title="已合成">
+                                  ✅
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Per-shot actions */}
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              {!hasImage && sb.imagePrompt && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 w-7 p-0"
+                                  onClick={() => handleGenerateShotImage(sb)}
+                                  disabled={generatingShotImg === sb.id}
+                                  title="生成图片"
+                                >
+                                  {generatingShotImg === sb.id ? <Loader2 className="size-3 animate-spin" /> : <ImageIcon className="size-3" />}
+                                </Button>
+                              )}
+                              {hasImage && !hasVideo && (sb.videoPrompt || sb.imagePrompt) && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 w-7 p-0"
+                                  onClick={() => handleGenerateVideo(sb)}
+                                  disabled={generatingVideo === sb.id}
+                                  title="生成视频"
+                                >
+                                  {generatingVideo === sb.id ? <Loader2 className="size-3 animate-spin" /> : <Video className="size-3" />}
+                                </Button>
+                              )}
+                              {sb.dialogue && !hasTts && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 w-7 p-0"
+                                  onClick={() => handleGenerateTts(sb)}
+                                  disabled={generatingTts === sb.id}
+                                  title="生成配音"
+                                >
+                                  {generatingTts === sb.id ? <Loader2 className="size-3 animate-spin" /> : <Mic className="size-3" />}
+                                </Button>
+                              )}
+                              {hasVideo && !isComposed && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 w-7 p-0"
+                                  onClick={() => handleComposeShot(sb)}
+                                  disabled={composing === sb.id}
+                                  title="合成"
+                                >
+                                  {composing === sb.id ? <Loader2 className="size-3 animate-spin" /> : <Layers className="size-3" />}
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Audio player row */}
+                          {sb.ttsAudioUrl && (
+                            <div className="mt-2 flex items-center gap-2 pl-[68px]">
+                              <Music className="size-3 text-primary/60 flex-shrink-0" />
+                              <audio
+                                src={sb.ttsAudioUrl}
+                                controls
+                                className="h-5 flex-1 [&::-webkit-media-controls-panel]:bg-muted/50"
+                                style={{ minWidth: 0 }}
+                              />
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Sequence Preview */}
+              {previewMode && currentPreviewStoryboard && (
+                <div className="border border-border/50 rounded-lg overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-2 bg-muted/30 border-b border-border/50">
+                    <div className="flex items-center gap-2">
+                      <Eye className="size-3.5 text-primary" />
+                      <span className="text-xs font-semibold">完整预览</span>
+                      <Badge variant="secondary" className="text-[9px] px-1.5 py-0">
+                        {currentPreviewShot + 1}/{videoShots.length}
+                      </Badge>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 text-xs"
+                      onClick={() => { setPreviewMode(false); setCurrentPreviewShot(0) }}
+                    >
+                      关闭预览
+                    </Button>
+                  </div>
+                  <div className="relative bg-black">
+                    <video
+                      ref={previewVideoRef}
+                      src={currentPreviewStoryboard.videoUrl!}
+                      onEnded={handlePreviewEnded}
+                      controls
+                      autoPlay
+                      className="w-full aspect-video"
+                      poster={currentPreviewStoryboard.firstFrameUrl ?? undefined}
+                    />
+                    {/* Shot number overlay */}
+                    <div className="absolute top-3 left-3 bg-black/60 text-white text-xs font-mono px-2 py-0.5 rounded">
+                      #{String(currentPreviewStoryboard.shotNumber).padStart(2, '0')} {currentPreviewStoryboard.title}
+                    </div>
+                    {/* Hidden audio for TTS sync */}
+                    {currentPreviewStoryboard.ttsAudioUrl && (
+                      <audio
+                        ref={previewAudioRef}
+                        src={currentPreviewStoryboard.ttsAudioUrl}
+                        autoPlay
+                        className="hidden"
+                      />
+                    )}
+                  </div>
+                  {/* Shot navigation */}
+                  <div className="flex items-center justify-center gap-2 p-2 bg-muted/20">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-xs"
+                      disabled={currentPreviewShot === 0}
+                      onClick={() => setCurrentPreviewShot(Math.max(0, currentPreviewShot - 1))}
+                    >
+                      上一镜
+                    </Button>
+                    <span className="text-xs text-muted-foreground">
+                      {currentPreviewShot + 1} / {videoShots.length}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-xs"
+                      disabled={currentPreviewShot >= videoShots.length - 1}
+                      onClick={() => setCurrentPreviewShot(Math.min(videoShots.length - 1, currentPreviewShot + 1))}
+                    >
+                      下一镜
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </ScrollArea>
         )}
