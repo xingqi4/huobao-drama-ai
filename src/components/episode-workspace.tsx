@@ -2598,8 +2598,8 @@ export function EpisodeWorkspace() {
             {episodeTitle}
           </Badge>
 
-          {/* Model selectors */}
-          <div className="hidden sm:flex items-center gap-1.5 ml-auto">
+          {/* Model selectors - desktop inline */}
+          <div className="hidden md:flex items-center gap-2 ml-auto">
             <ModelSelector
               category="llm"
               value={workspaceModels.llm}
@@ -2615,6 +2615,10 @@ export function EpisodeWorkspace() {
               value={workspaceModels.video}
               onChange={(m) => setWorkspaceModel('video', m)}
             />
+          </div>
+
+          {/* Status badges - desktop */}
+          <div className="hidden md:flex items-center gap-2">
             {episode?.scriptStatus && episode.scriptStatus !== 'pending' && (
               <div className="flex items-center gap-1">
                 <FileText className="size-3 text-muted-foreground" />
@@ -2639,11 +2643,30 @@ export function EpisodeWorkspace() {
           <Button
             variant="ghost"
             size="icon"
-            className="sm:hidden ml-auto size-8"
+            className="md:hidden ml-auto size-8"
             onClick={() => setSidebarOpen(!sidebarOpen)}
           >
             {sidebarOpen ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}
           </Button>
+        </div>
+
+        {/* Mobile model selectors row */}
+        <div className="flex md:hidden items-center gap-2 px-4 pb-2 overflow-x-auto">
+          <ModelSelector
+            category="llm"
+            value={workspaceModels.llm}
+            onChange={(m) => setWorkspaceModel('llm', m)}
+          />
+          <ModelSelector
+            category="image"
+            value={workspaceModels.image}
+            onChange={(m) => setWorkspaceModel('image', m)}
+          />
+          <ModelSelector
+            category="video"
+            value={workspaceModels.video}
+            onChange={(m) => setWorkspaceModel('video', m)}
+          />
         </div>
       </header>
 
