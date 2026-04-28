@@ -52,10 +52,12 @@ export async function POST(request: NextRequest) {
       await saveProviderConfig({
         category: category as AiCategory,
         provider,
-        name: name || existing?.name || provider,
-        apiKey: apiKey || existing?.apiKey || '',
-        baseUrl: baseUrl || existing?.baseUrl || '',
-        model: model || existing?.model || '',
+        // Use explicit undefined checks: if field is sent (even as ''), use it;
+        // if not sent (undefined), preserve existing DB value
+        name: name !== undefined ? (name || existing?.name || provider) : (existing?.name || provider),
+        apiKey: apiKey !== undefined ? (apiKey || existing?.apiKey || '') : (existing?.apiKey || ''),
+        baseUrl: baseUrl !== undefined ? (baseUrl || existing?.baseUrl || '') : (existing?.baseUrl || ''),
+        model: model !== undefined ? (model || existing?.model || '') : (existing?.model || ''),
         isActive: isActive ?? existing?.isActive ?? false,
       })
     }

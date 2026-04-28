@@ -190,10 +190,20 @@ export function EpisodeWorkspace() {
   // Active AI models for display in header
   const [activeModels, setActiveModels] = useState<Record<string, { provider: string; model: string; name: string } | null> | null>(null)
 
-  // Fetch active models on mount
-  useEffect(() => {
+  // Fetch active models on mount and when returning from settings
+  const fetchActiveModels = useCallback(() => {
     api.ai.getActiveModels().then(setActiveModels).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    fetchActiveModels()
+    // Re-fetch when tab regains focus (user may have changed settings)
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') fetchActiveModels()
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [fetchActiveModels])
 
   // ── Fetch episode data ─────────────────────────────────────
 

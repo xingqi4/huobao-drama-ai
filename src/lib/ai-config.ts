@@ -339,15 +339,20 @@ export async function getActiveProvider(category: AiCategory): Promise<ProviderC
   const noKeyProviders = ['z-ai-sdk']
 
   if (dbProvider) {
-    // If the provider needs no API key, or has one configured, use it
-    if (noKeyProviders.includes(dbProvider.provider) || dbProvider.apiKey) {
-      // Find preset for this provider to get defaultModel fallback
-      const preset = PROVIDER_PRESETS[category]?.find((p) => p.provider === dbProvider.provider)
+    // Use DB record if it's active — even if apiKey is empty
+    // (apiKey may come from env vars, or the provider may not need one)
+    // Find preset for this provider to get defaults and env var fallbacks
+    const preset = PROVIDER_PRESETS[category]?.find((p) => p.provider === dbProvider.provider)
+    const needsNoKey = noKeyProviders.includes(dbProvider.provider)
+    const hasApiKey = Boolean(dbProvider.apiKey)
+    const envApiKey = preset?.envKey ? (process.env[preset.envKey] || '') : ''
+    // Only use this DB record if it has an apiKey, can fall back to env, or doesn't need one
+    if (hasApiKey || envApiKey || needsNoKey) {
       return {
         category,
         provider: dbProvider.provider,
-        name: dbProvider.name,
-        apiKey: dbProvider.apiKey || '',
+        name: dbProvider.name || preset?.name || dbProvider.provider,
+        apiKey: dbProvider.apiKey || envApiKey,
         baseUrl: dbProvider.baseUrl || preset?.defaultBaseUrl || '',
         model: dbProvider.model || preset?.defaultModel || '',
         isActive: true,
@@ -389,13 +394,15 @@ export async function getAllProviders(category: AiCategory): Promise<ProviderCon
 
   for (const preset of presets) {
     const existing = dbProviders.find((p) => p.provider === preset.provider)
+    // Use || instead of ?? because Prisma stores '' (empty string) not null
+    // ?? treats '' as a real value and won't fall back to preset defaults
     result.push({
       category,
       provider: preset.provider,
-      name: existing?.name ?? preset.name,
-      apiKey: existing?.apiKey ?? (preset.envKey ? (process.env[preset.envKey] ?? '') : ''),
-      baseUrl: existing?.baseUrl ?? preset.defaultBaseUrl,
-      model: existing?.model ?? preset.defaultModel,
+      name: existing?.name || preset.name,
+      apiKey: existing?.apiKey || (preset.envKey ? (process.env[preset.envKey] || '') : ''),
+      baseUrl: existing?.baseUrl || preset.defaultBaseUrl,
+      model: existing?.model || preset.defaultModel,
       isActive: existing?.isActive ?? false,
     })
   }
@@ -491,10 +498,10 @@ export async function setActiveProvider(category: AiCategory, provider: string):
     create: {
       category,
       provider,
-      name: provider,
+      name: PROVIDER_PRESETS[category]?.find((p) => p.provider === provider)?.name || provider,
       apiKey: '',
-      baseUrl: '',
-      model: '',
+      baseUrl: PROVIDER_PRESETS[category]?.find((p) => p.provider === provider)?.defaultBaseUrl || '',
+      model: PROVIDER_PRESETS[category]?.find((p) => p.provider === provider)?.defaultModel || '',
       isActive: true,
     },
     update: {
