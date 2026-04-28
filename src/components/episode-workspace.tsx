@@ -54,7 +54,7 @@ import {
 
 // ── Types ────────────────────────────────────────────────────
 
-type StepKey = 'raw' | 'rewrite' | 'extract' | 'voice' | 'storyboard' | 'prompt_enhance' | 'production'
+type StepKey = 'raw' | 'rewrite' | 'extract' | 'voice' | 'storyboard' | 'production'
 
 interface StepDef {
   key: StepKey
@@ -89,11 +89,6 @@ const STEPS: StepDef[] = [
     key: 'storyboard',
     label: '分镜',
     icon: <Film className="size-4" />,
-  },
-  {
-    key: 'prompt_enhance',
-    label: '提示词',
-    icon: <Wand2 className="size-4" />,
   },
   {
     key: 'production',
@@ -233,8 +228,6 @@ export function EpisodeWorkspace() {
           return characters.length > 0 && characters.some((c) => c.voiceId)
         case 'storyboard':
           return storyboards.length > 0
-        case 'prompt_enhance':
-          return storyboards.length > 0 && storyboards.some((s) => s.imagePrompt && s.imagePrompt.length > 50)
         case 'production':
           return storyboards.some((s) => s.composedUrl || s.videoUrl)
         default:
@@ -376,7 +369,7 @@ export function EpisodeWorkspace() {
         'storyboard_breaker',
         selectedEpisodeId,
         selectedDramaId,
-        '请将剧本拆解为分镜序列。先使用read_storyboard_context读取剧本、角色和场景信息，然后为每个镜头生成完整的分镜数据（包含imagePrompt和videoPrompt），最后用save_storyboards保存所有分镜。'
+        '请将剧本拆解为分镜序列。先使用read_storyboard_context读取剧本、角色和场景信息，然后为每个镜头生成完整的分镜数据。⚠️重要：每个分镜的imagePrompt必须是6维度专业英文提示词（风格+构图+角色+场景+光线+画质），videoPrompt必须使用3秒分段XML格式。一步到位，无需二次增强。最后用save_storyboards保存所有分镜。'
       )
       toast({ title: '分镜生成完成' })
       await fetchEpisode()
@@ -387,9 +380,9 @@ export function EpisodeWorkspace() {
     }
   }
 
-  // ── AI: Generate enhanced prompts (via grid_prompt_generator Agent) ──
+  // ── AI: Enhance single shot prompt (via grid_prompt_generator Agent) ──
 
-  const handleGenerateEnhancedPrompts = async () => {
+  const handleEnhanceShotPrompt = async (storyboard: Storyboard) => {
     if (!selectedEpisodeId || !selectedDramaId) return
     setAiLoading(true)
     try {
@@ -397,9 +390,9 @@ export function EpisodeWorkspace() {
         'grid_prompt_generator',
         selectedEpisodeId,
         selectedDramaId,
-        '请为所有角色、场景和分镜生成专业的AI绘图提示词。先使用read_characters、read_scenes、read_shots读取数据，然后为每个角色生成肖像提示词（generate_character_prompt），为每个场景生成背景提示词（generate_scene_prompt），为每个分镜生成宫格图提示词（generate_grid_prompt）。确保所有提示词使用英文，风格一致。'
+        `请为镜头${storyboard.shotNumber}生成专业的AI绘图提示词。先使用read_shots读取分镜数据，然后为镜头${storyboard.shotNumber}生成宫格图提示词（generate_grid_prompt）。确保提示词使用英文，风格一致。`
       )
-      toast({ title: '提示词增强完成' })
+      toast({ title: `镜头 ${storyboard.shotNumber} 提示词已增强` })
       await fetchEpisode()
     } catch (err) {
       toast({ title: '提示词增强失败', description: String(err), variant: 'destructive' })
@@ -2000,8 +1993,32 @@ export function EpisodeWorkspace() {
                     </div>
                   )}
 
-                  {/* Collapsible prompts */}
+                  {/* Collapsible prompts + enhance button */}
                   <div className="ml-12 space-y-1">
+                    {(sb.imagePrompt || sb.videoPrompt) && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleEnhanceShotPrompt(sb)}
+                        disabled={aiLoading}
+                        className="h-6 text-[10px] px-2 text-primary/70 hover:text-primary gap-1 mb-1"
+                      >
+                        <Wand2 className="size-3" />
+                        AI增强提示词
+                      </Button>
+                    )}
+                    {!sb.imagePrompt && !sb.videoPrompt && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleEnhanceShotPrompt(sb)}
+                        disabled={aiLoading}
+                        className="h-6 text-[10px] px-2 text-primary/70 hover:text-primary gap-1 mb-1"
+                      >
+                        <Wand2 className="size-3" />
+                        生成提示词
+                      </Button>
+                    )}
                     {sb.imagePrompt && (
                       <Collapsible>
                         <CollapsibleTrigger className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors">
@@ -2066,232 +2083,6 @@ export function EpisodeWorkspace() {
     )
   }
 
-  // ── Render panel: Prompt Enhancement ────────────────────────
-
-  const renderPromptEnhancePanel = () => {
-    // No storyboards yet
-    if (storyboards.length === 0 && !aiLoading) {
-      return (
-        <div className="flex-1 flex items-center justify-center p-6">
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="text-center max-w-md"
-          >
-            <div className="mx-auto size-16 rounded-full bg-primary/10 flex items-center justify-center mb-5">
-              <Wand2 className="size-8 text-primary" />
-            </div>
-            <h2 className="text-lg font-semibold mb-2">提示词增强</h2>
-            <p className="text-sm text-muted-foreground mb-6">
-              AI将为分镜生成更专业的图片/视频提示词，提升画面质量
-            </p>
-            <p className="text-xs text-muted-foreground">请先在「分镜」步骤中生成分镜</p>
-          </motion.div>
-        </div>
-      )
-    }
-
-    // Loading state
-    if (aiLoading && activeStep === 'prompt_enhance') {
-      return (
-        <div className="flex-1 p-6 overflow-y-auto">
-          <AgentExecutionPanel
-            agentType="grid_prompt_generator"
-            agentName="宫格提示词生成器"
-            isRunning={agentExec.isRunning('grid_prompt_generator')}
-            logs={agentExec.logs['grid_prompt_generator'] || []}
-            resultText={agentExec.resultTexts['grid_prompt_generator']}
-            duration={agentExec.durations['grid_prompt_generator']}
-            error={agentExec.errors['grid_prompt_generator']}
-          />
-        </div>
-      )
-    }
-
-    // Content exists — show enhanced prompt stats and per-shot prompt view
-    const shotsWithImagePrompt = storyboards.filter((s) => s.imagePrompt && s.imagePrompt.length > 20)
-    const shotsWithVideoPrompt = storyboards.filter((s) => s.videoPrompt)
-    const hasAnyPrompt = shotsWithImagePrompt.length > 0 || shotsWithVideoPrompt.length > 0
-
-    return (
-      <div className="flex flex-col h-full">
-        <div className="flex items-center justify-between px-6 py-3 border-b border-border/50 flex-wrap gap-2">
-          <div className="flex items-center gap-3">
-            <span className="text-xs font-mono text-primary/80">06</span>
-            <h2 className="text-sm font-semibold">提示词增强</h2>
-            <Badge variant="secondary" className="text-[10px]">{storyboards.length} 镜</Badge>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              onClick={handleGenerateEnhancedPrompts}
-              disabled={aiLoading || storyboards.length === 0}
-              className="amber-glow"
-            >
-              <Sparkles className="size-3.5" />
-              AI增强提示词
-            </Button>
-          </div>
-        </div>
-
-        <ScrollArea className="flex-1">
-          <div className="p-6 space-y-6">
-            {/* Prompt stats */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              <Card className="border-border/50 py-0 gap-0">
-                <CardContent className="p-3 text-center">
-                  <div className="flex items-center justify-center gap-1.5 mb-1">
-                    <ImageIcon className="size-3.5 text-primary/70" />
-                    <span className="text-[10px] text-muted-foreground">图片提示词</span>
-                  </div>
-                  <div className="text-lg font-bold">{shotsWithImagePrompt.length}<span className="text-xs font-normal text-muted-foreground">/{storyboards.length}</span></div>
-                  <Progress value={storyboards.length > 0 ? (shotsWithImagePrompt.length / storyboards.length) * 100 : 0} className="h-1 mt-1.5" />
-                </CardContent>
-              </Card>
-              <Card className="border-border/50 py-0 gap-0">
-                <CardContent className="p-3 text-center">
-                  <div className="flex items-center justify-center gap-1.5 mb-1">
-                    <Video className="size-3.5 text-primary/70" />
-                    <span className="text-[10px] text-muted-foreground">视频提示词</span>
-                  </div>
-                  <div className="text-lg font-bold">{shotsWithVideoPrompt.length}<span className="text-xs font-normal text-muted-foreground">/{storyboards.length}</span></div>
-                  <Progress value={storyboards.length > 0 ? (shotsWithVideoPrompt.length / storyboards.length) * 100 : 0} className="h-1 mt-1.5" />
-                </CardContent>
-              </Card>
-              <Card className="border-border/50 py-0 gap-0 col-span-2 sm:col-span-1">
-                <CardContent className="p-3 text-center">
-                  <div className="flex items-center justify-center gap-1.5 mb-1">
-                    <Wand2 className="size-3.5 text-primary/70" />
-                    <span className="text-[10px] text-muted-foreground">增强状态</span>
-                  </div>
-                  <div className="text-lg font-bold">
-                    {hasAnyPrompt ? (
-                      <span className="text-emerald-500">已完成</span>
-                    ) : (
-                      <span className="text-muted-foreground">待增强</span>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Per-shot prompt view */}
-            <div>
-              <h3 className="text-xs font-semibold text-muted-foreground mb-3 flex items-center gap-1.5">
-                <Film className="size-3.5" />
-                镜头提示词详情
-              </h3>
-              <div className="space-y-3">
-                {storyboards.map((sb) => (
-                  <Card key={sb.id} className="border-border/50 py-0 gap-0">
-                    <CardContent className="p-4">
-                      <div className="flex items-start gap-3">
-                        <div className="flex-shrink-0 size-8 rounded bg-primary/10 flex items-center justify-center">
-                          <span className="text-xs font-bold text-primary">
-                            {String(sb.shotNumber).padStart(2, '0')}
-                          </span>
-                        </div>
-                        <div className="flex-1 min-w-0 space-y-2">
-                          <div className="flex items-center gap-2">
-                            <h4 className="text-sm font-medium">{sb.title}</h4>
-                            {sb.imagePrompt && sb.imagePrompt.length > 20 && (
-                              <Badge className="status-completed text-[9px] px-1.5 py-0 gap-0.5">
-                                <Check className="size-2.5" /> 已增强
-                              </Badge>
-                            )}
-                          </div>
-
-                          {/* Image Prompt */}
-                          {sb.imagePrompt ? (
-                            <Collapsible>
-                              <CollapsibleTrigger className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors">
-                                <ChevronDown className="size-3" />
-                                <ImageIcon className="size-3" />
-                                图片提示词
-                                <span className="text-[9px] text-muted-foreground/60">({sb.imagePrompt.length}字符)</span>
-                              </CollapsibleTrigger>
-                              <CollapsibleContent>
-                                <div className="flex items-start gap-1.5 mt-1">
-                                  <p className="text-xs text-muted-foreground bg-muted/30 rounded p-2 flex-1 break-words">
-                                    {sb.imagePrompt}
-                                  </p>
-                                  <button
-                                    onClick={() => handleCopy(sb.imagePrompt!, `pe-img-${sb.id}`)}
-                                    className="flex-shrink-0 p-1 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
-                                    title="复制"
-                                  >
-                                    {copiedField === `pe-img-${sb.id}` ? (
-                                      <Check className="size-3 text-emerald-500" />
-                                    ) : (
-                                      <Copy className="size-3" />
-                                    )}
-                                  </button>
-                                </div>
-                              </CollapsibleContent>
-                            </Collapsible>
-                          ) : (
-                            <p className="text-[11px] text-muted-foreground/50 flex items-center gap-1">
-                              <ImageIcon className="size-3" />
-                              暂无图片提示词
-                            </p>
-                          )}
-
-                          {/* Video Prompt */}
-                          {sb.videoPrompt ? (
-                            <Collapsible>
-                              <CollapsibleTrigger className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors">
-                                <ChevronDown className="size-3" />
-                                <Video className="size-3" />
-                                视频提示词
-                                <span className="text-[9px] text-muted-foreground/60">({sb.videoPrompt.length}字符)</span>
-                              </CollapsibleTrigger>
-                              <CollapsibleContent>
-                                <div className="flex items-start gap-1.5 mt-1">
-                                  <p className="text-xs text-muted-foreground bg-muted/30 rounded p-2 flex-1 break-words">
-                                    {sb.videoPrompt}
-                                  </p>
-                                  <button
-                                    onClick={() => handleCopy(sb.videoPrompt!, `pe-vid-${sb.id}`)}
-                                    className="flex-shrink-0 p-1 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
-                                    title="复制"
-                                  >
-                                    {copiedField === `pe-vid-${sb.id}` ? (
-                                      <Check className="size-3 text-emerald-500" />
-                                    ) : (
-                                      <Copy className="size-3" />
-                                    )}
-                                  </button>
-                                </div>
-                              </CollapsibleContent>
-                            </Collapsible>
-                          ) : (
-                            <p className="text-[11px] text-muted-foreground/50 flex items-center gap-1">
-                              <Video className="size-3" />
-                              暂无视频提示词
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </div>
-
-            {/* Info hint */}
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-muted/20 border border-border/30">
-              <Info className="size-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
-              <p className="text-[11px] text-muted-foreground leading-relaxed">
-                提示词增强会使用 grid_prompt_generator Agent 为每个镜头生成更专业、更详细的英文图片/视频提示词。
-                增强后的提示词将直接更新到分镜数据中，后续图片和视频生成将使用增强后的提示词。
-              </p>
-            </div>
-          </div>
-        </ScrollArea>
-      </div>
-    )
-  }
-
   // ── Render panel: Production ───────────────────────────────
 
   const renderProductionPanel = () => {
@@ -2320,7 +2111,7 @@ export function EpisodeWorkspace() {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-3 border-b border-border/50 flex-wrap gap-2">
           <div className="flex items-center gap-3">
-            <span className="text-xs font-mono text-primary/80">07</span>
+            <span className="text-xs font-mono text-primary/80">06</span>
             <div>
               <h2 className="text-sm font-semibold">后期制作</h2>
               <p className="text-[10px] text-muted-foreground">配音 · 合成（字幕+配音） · 预览 · 导出</p>
@@ -2751,8 +2542,6 @@ export function EpisodeWorkspace() {
         return renderVoicePanel()
       case 'storyboard':
         return renderStoryboardPanel()
-      case 'prompt_enhance':
-        return renderPromptEnhancePanel()
       case 'production':
         return renderProductionPanel()
       default:
