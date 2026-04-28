@@ -188,35 +188,20 @@ export function EpisodeWorkspace() {
   const previewVideoRef = useRef<HTMLVideoElement>(null)
   const previewAudioRef = useRef<HTMLAudioElement>(null)
 
-  // Workspace model selection - initialized from active config, user can override
-  const [workspaceModels, setWorkspaceModels] = useState<{
-    llm: string
-    image: string
-    video: string
-    tts: string
-  }>({ llm: '', image: '', video: '', tts: '' })
+  // Workspace model selection - persisted in global store + localStorage
+  const { workspaceModels, setWorkspaceModel, initWorkspaceModels } = useAppStore()
 
-  // Initialize workspace models from active provider config
-  const fetchActiveModels = useCallback(() => {
-    api.ai.getActiveModels().then((models) => {
-      setWorkspaceModels(prev => ({
-        llm: models.llm?.model || prev.llm,
-        image: models.image?.model || prev.image,
-        video: models.video?.model || prev.video,
-        tts: models.tts?.model || prev.tts,
-      }))
-    }).catch(() => {})
-  }, [])
-
+  // Initialize workspace models from active provider config (only fills empty fields)
   useEffect(() => {
-    fetchActiveModels()
-    // Re-fetch when tab regains focus (user may have changed settings)
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') fetchActiveModels()
-    }
-    document.addEventListener('visibilitychange', handleVisibility)
-    return () => document.removeEventListener('visibilitychange', handleVisibility)
-  }, [fetchActiveModels])
+    api.ai.getActiveModels().then((models) => {
+      initWorkspaceModels({
+        llm: models.llm?.model || '',
+        image: models.image?.model || '',
+        video: models.video?.model || '',
+        tts: models.tts?.model || '',
+      })
+    }).catch(() => {})
+  }, [initWorkspaceModels])
 
   // ── Fetch episode data ─────────────────────────────────────
 
@@ -2618,17 +2603,17 @@ export function EpisodeWorkspace() {
             <ModelSelector
               category="llm"
               value={workspaceModels.llm}
-              onChange={(m) => setWorkspaceModels(prev => ({ ...prev, llm: m }))}
+              onChange={(m) => setWorkspaceModel('llm', m)}
             />
             <ModelSelector
               category="image"
               value={workspaceModels.image}
-              onChange={(m) => setWorkspaceModels(prev => ({ ...prev, image: m }))}
+              onChange={(m) => setWorkspaceModel('image', m)}
             />
             <ModelSelector
               category="video"
               value={workspaceModels.video}
-              onChange={(m) => setWorkspaceModels(prev => ({ ...prev, video: m }))}
+              onChange={(m) => setWorkspaceModel('video', m)}
             />
             {episode?.scriptStatus && episode.scriptStatus !== 'pending' && (
               <div className="flex items-center gap-1">

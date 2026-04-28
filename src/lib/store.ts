@@ -109,6 +109,13 @@ export type AppView = 'projects' | 'project-detail' | 'episode-workspace' | 'set
 // Store interface
 // ============================================================
 
+interface WorkspaceModels {
+  llm: string
+  image: string
+  video: string
+  tts: string
+}
+
 interface AppStore {
   // Navigation
   view: AppView
@@ -129,6 +136,11 @@ interface AppStore {
   currentEpisode: EpisodeDetail | null
   setCurrentEpisode: (episode: EpisodeDetail | null) => void
 
+  // Workspace model selection (persisted to localStorage)
+  workspaceModels: WorkspaceModels
+  setWorkspaceModel: (category: keyof WorkspaceModels, model: string) => void
+  initWorkspaceModels: (models: Partial<WorkspaceModels>) => void
+
   // Loading states
   loading: boolean
   setLoading: (loading: boolean) => void
@@ -139,6 +151,16 @@ interface AppStore {
 // ============================================================
 // Zustand store
 // ============================================================
+
+// Load persisted workspace models from localStorage
+function loadWorkspaceModels(): WorkspaceModels {
+  if (typeof window === 'undefined') return { llm: '', image: '', video: '', tts: '' }
+  try {
+    const saved = localStorage.getItem('workspaceModels')
+    if (saved) return JSON.parse(saved) as WorkspaceModels
+  } catch {}
+  return { llm: '', image: '', video: '', tts: '' }
+}
 
 export const useAppStore = create<AppStore>((set) => ({
   // Navigation state
@@ -186,6 +208,26 @@ export const useAppStore = create<AppStore>((set) => ({
   currentEpisode: null,
   setCurrentEpisode: (episode: EpisodeDetail | null) =>
     set({ currentEpisode: episode }),
+
+  // Workspace model selection (persisted to localStorage)
+  workspaceModels: loadWorkspaceModels(),
+  setWorkspaceModel: (category, model) =>
+    set((state) => {
+      const updated = { ...state.workspaceModels, [category]: model }
+      try { localStorage.setItem('workspaceModels', JSON.stringify(updated)) } catch {}
+      return { workspaceModels: updated }
+    }),
+  initWorkspaceModels: (models) =>
+    set((state) => {
+      // Only fill in empty fields — don't overwrite user selections
+      const updated = { ...state.workspaceModels }
+      for (const [k, v] of Object.entries(models)) {
+        const key = k as keyof WorkspaceModels
+        if (!updated[key] && v) updated[key] = v
+      }
+      try { localStorage.setItem('workspaceModels', JSON.stringify(updated)) } catch {}
+      return { workspaceModels: updated }
+    }),
 
   // Loading states
   loading: false,
