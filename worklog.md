@@ -242,3 +242,34 @@ Stage Summary:
 - 线上原有 7 个模型和数据完全保留，3 个新模型增量添加
 - build.js 去掉 --accept-data-loss 标志，保护线上已有数据
 - 代码已推送到 GitHub (commit 3422cc1)，Vercel 应自动触发重新部署
+
+---
+Task ID: 6
+Agent: Main
+Task: 全面更新图片/视频/TTS供应商模型列表
+
+Work Log:
+- 分析当前模型列表，对比各供应商2025年最新API文档
+- 更新图片生成模型 (10→22个):
+  - OpenAI: 默认gpt-image-1 + dall-e-3/dall-e-2
+  - Chatfire: 新增gemini-2.5-flash/gpt-image-1/MiniMax-Image-01代理 (1→5)
+  - Gemini: 新增gemini-2.5-pro-preview-image-generation高清 (2→3)
+  - MiniMax: 新增MiniMax-Image-02 (1→2)
+  - 火山引擎: 新增Seedream 4.0/3.5 (2→4)
+  - 阿里: 新增wanx2.1-t2i-plus/wanx-v1/flux-dev/flux-schnell (2→6)
+- 更新视频生成模型 (6→15个):
+  - MiniMax: 新增T2V-01/T2V-01-Director/S2V-01 (2→5)
+  - 火山引擎: 新增Seedance 1.0 Pro/Lite (2→4)
+  - Vidu: 新增vidu2/vidu1.5 (2→4)
+  - 阿里: 新增wan2.1-i2v-turbo/plus/wan2.1-t2v-turbo/plus (2→6)
+- 更新TTS模型 (5→8个):
+  - MiniMax: 新增speech-01 (2→3)
+  - Chatfire: 新增speech-2.6 (1→2)
+  - 新增Fish Audio供应商: fish-speech-1.5/1.4 (0→2)，复用OpenAITTSAdapter
+- Lint检查通过，代码已推送GitHub (commit c30b509)
+
+Stage Summary:
+- 图片模型 10→22，视频模型 6→15，TTS模型 5→8
+- Chatfire作为统一网关可代理Gemini/OpenAI/MiniMax
+- Fish Audio已注册到ttsAdapters（复用OpenAI兼容adapter）
+- 所有新增模型均配有推荐/最新/快速/高清/经济等专业标签
