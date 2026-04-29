@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -13,20 +7,135 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+// ============ Drama Project ============
+model Drama {
+  id            String   @id @default(cuid())
+  title         String
+  description   String   @default("")
+  genre         String   @default("都市")
+  style         String   @default("realistic")
+  coverImage    String?
+  totalEpisodes Int      @default(0)
+  status        String   @default("draft")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  episodes   Episode[]
+  characters Character[]
+  scenes     Scene[]
 }
 
-model Post {
-  id        String   @id @default(cuid())
-  title     String
-  content   String?
-  published Boolean  @default(false)
-  authorId  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+// ============ Episode ============
+model Episode {
+  id            String   @id @default(cuid())
+  dramaId       String
+  episodeNumber Int
+  title         String   @default("")
+  rawContent    String?
+  scriptContent String?
+  scriptStatus  String   @default("pending")
+  extractStatus String   @default("pending")
+  storyboardStatus String @default("pending")
+  status        String   @default("draft")
+  videoUrl      String?
+  duration      Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  drama        Drama        @relation(fields: [dramaId], references: [id], onDelete: Cascade)
+  storyboards  Storyboard[]
+
+  @@unique([dramaId, episodeNumber])
+}
+
+// ============ Character ============
+model Character {
+  id          String   @id @default(cuid())
+  dramaId     String
+  name        String
+  role        String   @default("supporting")
+  gender      String   @default("unknown")
+  age         String   @default("")
+  appearance  String   @default("")
+  personality String   @default("")
+  voiceStyle  String   @default("")
+  voiceId     String?
+  imagePrompt String?
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  drama Drama @relation(fields: [dramaId], references: [id], onDelete: Cascade)
+}
+
+// ============ Scene ============
+model Scene {
+  id          String   @id @default(cuid())
+  dramaId     String
+  location    String
+  timeOfDay   String   @default("day")
+  description String   @default("")
+  prompt      String   @default("")
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  drama Drama @relation(fields: [dramaId], references: [id], onDelete: Cascade)
+}
+
+// ============ Storyboard (Shot) ============
+model Storyboard {
+  id             String   @id @default(cuid())
+  episodeId      String
+  shotNumber     Int
+  title          String   @default("")
+  shotType       String   @default("medium")
+  cameraAngle    String   @default("eye-level")
+  cameraMovement String   @default("static")
+  action         String   @default("")
+  dialogue       String?
+  dialogueChar   String?
+  duration       Float    @default(3.0)
+  imagePrompt    String?
+  videoPrompt    String?
+  atmosphere     String?
+  firstFrameUrl  String?
+  videoUrl       String?
+  ttsAudioUrl    String?
+  composedUrl    String?
+  status         String   @default("pending")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+}
+
+// ============ AI Provider Configuration ============
+model AiProvider {
+  id          String   @id @default(cuid())
+  category    String   // "llm" | "image" | "video" | "tts"
+  provider    String   // "nvidia" | "openai" | "stability" | "z-ai-sdk" | "siliconflow" | "volcengine" | "fish-audio" | custom
+  name        String   // Display name
+  apiKey      String   @default("")
+  baseUrl     String   @default("")
+  model       String   @default("")
+  isActive    Boolean  @default(false)
+  sort        Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([category, provider])
+}
+
+// ============ Agent Configuration ============
+model AgentConfig {
+  id          String   @id @default(cuid())
+  agentType   String   @unique  // "script_rewriter" | "extractor" | "storyboard_breaker" | "voice_assigner" | "grid_prompt_generator"
+  systemPrompt String?
+  model       String?
+  temperature Float    @default(0.7)
+  maxTokens   Int      @default(4096)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
