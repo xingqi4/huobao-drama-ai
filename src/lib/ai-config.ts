@@ -129,26 +129,11 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
   ],
   image: [
     {
-      provider: 'siliconflow',
-      name: 'SiliconFlow Image',
-      defaultBaseUrl: 'https://api.siliconflow.cn/v1',
-      defaultModel: 'stabilityai/stable-diffusion-xl-base-1.0',
-      description: 'SiliconFlow — SDXL, FLUX 等（推荐，国内可用）',
-      envKey: 'SILICONFLOW_API_KEY',
-      availableModels: [
-        { id: 'stabilityai/stable-diffusion-xl-base-1.0', name: 'SDXL Base 1.0', tags: ['推荐'] },
-        { id: 'black-forest-labs/FLUX.1-schnell', name: 'FLUX.1 Schnell', tags: ['快速'] },
-        { id: 'black-forest-labs/FLUX.1-dev', name: 'FLUX.1 Dev' },
-        { id: 'stabilityai/stable-diffusion-3-5-large', name: 'SD 3.5 Large' },
-        { id: 'stabilityai/stable-diffusion-3-medium', name: 'SD 3 Medium' },
-      ],
-    },
-    {
       provider: 'openai',
       name: 'OpenAI DALL·E',
       defaultBaseUrl: 'https://api.openai.com/v1',
       defaultModel: 'dall-e-3',
-      description: 'OpenAI DALL·E 3 图片生成',
+      description: 'OpenAI 图片生成（DALL·E / GPT Image）',
       envKey: 'OPENAI_API_KEY',
       availableModels: [
         { id: 'dall-e-3', name: 'DALL·E 3', tags: ['推荐'] },
@@ -156,17 +141,62 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
       ],
     },
     {
-      provider: 'stability',
-      name: 'Stability AI',
-      defaultBaseUrl: 'https://api.stability.ai/v1',
-      defaultModel: 'stable-diffusion-xl-1024-v1-0',
-      description: 'Stability AI 官方 API',
-      envKey: 'STABILITY_API_KEY',
+      provider: 'chatfire',
+      name: 'Chatfire',
+      defaultBaseUrl: 'https://api.chatfire.site',
+      defaultModel: 'gemini-3-pro-image-preview',
+      description: 'Chatfire 统一网关（OpenAI 兼容格式，国内可用）',
+      envKey: 'CHATFIRE_API_KEY',
       availableModels: [
-        { id: 'stable-diffusion-xl-1024-v1-0', name: 'SDXL 1.0 1024', tags: ['推荐'] },
-        { id: 'stable-diffusion-3-5-large', name: 'SD 3.5 Large' },
-        { id: 'stable-diffusion-3-medium', name: 'SD 3 Medium' },
-        { id: 'stable-image-core', name: 'Stable Image Core' },
+        { id: 'gemini-3-pro-image-preview', name: 'Gemini 3 Pro Image', tags: ['推荐', '最新'] },
+        { id: 'dall-e-3', name: 'DALL·E 3' },
+      ],
+    },
+    {
+      provider: 'gemini',
+      name: 'Gemini Image',
+      defaultBaseUrl: 'https://generativelanguage.googleapis.com',
+      defaultModel: 'gemini-2.0-flash-exp-image-generation',
+      description: 'Google Gemini 图片生成（原生REST格式，支持多模态输出）',
+      envKey: 'GEMINI_API_KEY',
+      availableModels: [
+        { id: 'gemini-2.0-flash-exp-image-generation', name: 'Gemini 2.0 Flash Image', tags: ['推荐', '最新'] },
+        { id: 'gemini-2.5-flash-preview-image-generation', name: 'Gemini 2.5 Flash Image', tags: ['最新'] },
+      ],
+    },
+    {
+      provider: 'minimax',
+      name: 'MiniMax Image',
+      defaultBaseUrl: 'https://api.minimax.chat',
+      defaultModel: 'MiniMax-Image-01',
+      description: 'MiniMax 图片生成（支持参考图、异步轮询）',
+      envKey: 'MINIMAX_API_KEY',
+      availableModels: [
+        { id: 'MiniMax-Image-01', name: 'MiniMax Image 01', tags: ['推荐'] },
+      ],
+    },
+    {
+      provider: 'volcengine',
+      name: '火山引擎 (Seedream)',
+      defaultBaseUrl: 'https://visual.volcengineapi.com',
+      defaultModel: 'doubao-seedream-5-0-lite',
+      description: '火山引擎 Seedream 图片生成（国内可用）',
+      envKey: 'VOLCENGINE_API_KEY',
+      availableModels: [
+        { id: 'doubao-seedream-5-0-lite', name: 'Seedream 5.0 Lite', tags: ['推荐', '快速'] },
+        { id: 'doubao-seedream-5-0-pro', name: 'Seedream 5.0 Pro', tags: ['高清'] },
+      ],
+    },
+    {
+      provider: 'ali',
+      name: '阿里万相',
+      defaultBaseUrl: 'https://dashscope.aliyuncs.com',
+      defaultModel: 'wan2.6-t2i',
+      description: '阿里通义万相图片生成（DashScope API，国内可用）',
+      envKey: 'ALI_API_KEY',
+      availableModels: [
+        { id: 'wan2.6-t2i', name: '万相 2.6', tags: ['推荐', '最新'] },
+        { id: 'wanx2.1-t2i-turbo', name: '万相 2.1 Turbo', tags: ['快速'] },
       ],
     },
     {
@@ -188,36 +218,52 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
   ],
   video: [
     {
-      provider: 'siliconflow',
-      name: 'SiliconFlow Video',
-      defaultBaseUrl: 'https://api.siliconflow.cn/v1',
-      defaultModel: 'ali-video/video-01',
-      description: 'SiliconFlow 视频生成（推荐，国内可用）',
-      envKey: 'SILICONFLOW_API_KEY',
+      provider: 'minimax',
+      name: 'MiniMax Video',
+      defaultBaseUrl: 'https://api.minimax.chat',
+      defaultModel: 'MiniMax-Video-01',
+      description: 'MiniMax 视频生成（支持图生视频、首尾帧）',
+      envKey: 'MINIMAX_API_KEY',
       availableModels: [
-        { id: 'ali-video/video-01', name: 'Ali Video 01', tags: ['推荐'] },
-        { id: 'tencent-video/hunyuan-video', name: 'Hunyuan Video' },
-      ],
-    },
-    {
-      provider: 'seedance',
-      name: 'Seedance 2.0',
-      defaultBaseUrl: 'https://api.siliconflow.cn/v1',
-      defaultModel: 'bytedance-seedance/seedance-2.0-pro-250428',
-      description: 'Seedance 2.0 视频生成（字节跳动，支持图生视频）',
-      envKey: 'SILICONFLOW_API_KEY',
-      availableModels: [
-        { id: 'bytedance-seedance/seedance-2.0-pro-250428', name: 'Seedance 2.0 Pro', tags: ['推荐'] },
-        { id: 'bytedance-seedance/seedance-2.0-lite-250428', name: 'Seedance 2.0 Lite', tags: ['快速'] },
+        { id: 'MiniMax-Video-01', name: 'MiniMax Video 01', tags: ['推荐'] },
+        { id: 'Video-01-live', name: 'Video 01 Live', tags: ['直播'] },
       ],
     },
     {
       provider: 'volcengine',
-      name: '火山引擎 (Kling)',
+      name: '火山引擎 Seedance',
       defaultBaseUrl: 'https://visual.volcengineapi.com',
-      defaultModel: '',
-      description: '火山引擎 / Kling 视频生成',
+      defaultModel: 'doubao-seedance-1-5-pro-251215',
+      description: '火山引擎 Seedance 视频生成（图生视频，国内可用）',
       envKey: 'VOLCENGINE_API_KEY',
+      availableModels: [
+        { id: 'doubao-seedance-1-5-pro-251215', name: 'Seedance 1.5 Pro', tags: ['推荐'] },
+        { id: 'doubao-seedance-1-5-lite-250428', name: 'Seedance 1.5 Lite', tags: ['快速'] },
+      ],
+    },
+    {
+      provider: 'vidu',
+      name: 'Vidu',
+      defaultBaseUrl: 'https://api.vidu.cn',
+      defaultModel: 'viduq3-turbo',
+      description: 'Vidu 视频生成（图生视频，Webhook回调模式）',
+      envKey: 'VIDU_API_KEY',
+      availableModels: [
+        { id: 'viduq3-turbo', name: 'Vidu Q3 Turbo', tags: ['推荐', '快速'] },
+        { id: 'viduq3', name: 'Vidu Q3', tags: ['高清'] },
+      ],
+    },
+    {
+      provider: 'ali',
+      name: '阿里万相视频',
+      defaultBaseUrl: 'https://dashscope.aliyuncs.com',
+      defaultModel: 'wan2.6-i2v-flash',
+      description: '阿里通义万相视频生成（DashScope API，国内可用）',
+      envKey: 'ALI_API_KEY',
+      availableModels: [
+        { id: 'wan2.6-i2v-flash', name: '万相 2.6 I2V Flash', tags: ['推荐', '快速'] },
+        { id: 'wan2.6-i2v-pro', name: '万相 2.6 I2V Pro', tags: ['高清'] },
+      ],
     },
     {
       provider: 'z-ai-sdk',
@@ -238,11 +284,23 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
   ],
   tts: [
     {
+      provider: 'minimax',
+      name: 'MiniMax TTS',
+      defaultBaseUrl: 'https://api.minimax.chat',
+      defaultModel: 'speech-2.8-hd',
+      description: 'MiniMax 语音合成（推荐，高质量中文语音）',
+      envKey: 'MINIMAX_API_KEY',
+      availableModels: [
+        { id: 'speech-2.8-hd', name: 'Speech 2.8 HD', tags: ['推荐', '高清'] },
+        { id: 'speech-2.6', name: 'Speech 2.6', tags: ['快速'] },
+      ],
+    },
+    {
       provider: 'openai',
       name: 'OpenAI TTS',
       defaultBaseUrl: 'https://api.openai.com/v1',
       defaultModel: 'tts-1',
-      description: 'OpenAI Text-to-Speech（推荐）',
+      description: 'OpenAI 语音合成',
       envKey: 'OPENAI_API_KEY',
       availableModels: [
         { id: 'tts-1', name: 'TTS-1', tags: ['推荐'] },
@@ -251,21 +309,15 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
       ],
     },
     {
-      provider: 'fish-audio',
-      name: 'Fish Audio',
-      defaultBaseUrl: 'https://api.fish.audio/v1',
-      defaultModel: 'tts-1',
-      description: 'Fish Audio 语音合成',
-      envKey: 'FISH_AUDIO_API_KEY',
-    },
-
-    {
-      provider: 'volcengine',
-      name: '火山引擎 TTS',
-      defaultBaseUrl: 'https://openspeech.bytedance.com/api/v1',
-      defaultModel: '',
-      description: '火山引擎语音合成',
-      envKey: 'VOLCENGINE_API_KEY',
+      provider: 'chatfire',
+      name: 'Chatfire TTS',
+      defaultBaseUrl: 'https://api.chatfire.site',
+      defaultModel: 'speech-2.8-hd',
+      description: 'Chatfire TTS 网关（MiniMax 兼容，国内可用）',
+      envKey: 'CHATFIRE_API_KEY',
+      availableModels: [
+        { id: 'speech-2.8-hd', name: 'Speech 2.8 HD', tags: ['推荐'] },
+      ],
     },
     {
       provider: 'z-ai-sdk',
@@ -588,22 +640,87 @@ export const aiClient = {
   async generateImage(
     prompt: string,
     negativePrompt?: string,
-    options?: { width?: number; height?: number; size?: string }
+    options?: { width?: number; height?: number; size?: string; referenceImages?: string[] }
   ): Promise<string> {
     const provider = await getActiveProvider('image')
     if (!provider) {
       throw new Error('未配置图片生成供应商。请在设置中配置 API Key。')
     }
 
-    // Provider-specific implementations
+    // z-ai-sdk uses its own SDK (not HTTP adapter)
     if (provider.provider === 'z-ai-sdk') {
       return this._generateImageZaiSdk(prompt, provider, options)
-    } else if (provider.provider === 'stability') {
-      return this._generateImageStability(prompt, negativePrompt, provider, options)
-    } else {
-      // OpenAI-compatible (openai, siliconflow, custom) fallback
-      return this._generateImageOpenAI(prompt, provider, options)
     }
+
+    // All other providers use the adapter pattern
+    const { getImageAdapter } = await import('@/lib/adapters/image')
+    const adapter = getImageAdapter(provider.provider)
+    const config = { baseUrl: provider.baseUrl, apiKey: provider.apiKey, model: provider.model }
+    const size = options?.size ?? '1024x1024'
+
+    const req = adapter.buildGenerateRequest(config, { prompt, size, negativePrompt, referenceImages: options?.referenceImages })
+    const res = await fetch(req.url, { method: req.method, headers: req.headers, body: JSON.stringify(req.body) })
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => 'Unknown error')
+      throw new Error(`图片生成API错误 (${res.status}): ${text.slice(0, 300)}`)
+    }
+
+    const result = await res.json()
+    const parsed = adapter.parseGenerateResponse(result)
+
+    // Sync response with URL
+    if (!parsed.isAsync && parsed.imageUrl) {
+      const imgRes = await fetch(parsed.imageUrl)
+      const buffer = Buffer.from(await imgRes.arrayBuffer())
+      return buffer.toString('base64')
+    }
+
+    // Sync response with base64
+    if (!parsed.isAsync && parsed.imageBase64) {
+      return parsed.imageBase64
+    }
+
+    // Async response — need to poll
+    if (parsed.isAsync && parsed.taskId) {
+      return this._pollImageTask(adapter, config, parsed.taskId)
+    }
+
+    throw new Error('图片生成返回数据为空')
+  },
+
+  async _pollImageTask(
+    adapter: import('@/lib/adapters/image').ImageProviderAdapter,
+    config: { baseUrl: string; apiKey: string; model: string },
+    taskId: string,
+    maxPolls = 120,
+    interval = 5000
+  ): Promise<string> {
+    const pollReq = adapter.buildPollRequest(config, taskId)
+    if (!pollReq) {
+      throw new Error('该供应商不支持轮询查询，请使用Webhook模式')
+    }
+
+    for (let i = 0; i < maxPolls; i++) {
+      await new Promise((r) => setTimeout(r, interval))
+      const pollRes = await fetch(pollReq.url, { method: pollReq.method, headers: pollReq.headers })
+      const pollData = await pollRes.json()
+      const pollParsed = adapter.parsePollResponse(pollData)
+
+      if (pollParsed.status === 'completed') {
+        if (pollParsed.imageUrl) {
+          const imgRes = await fetch(pollParsed.imageUrl)
+          const buffer = Buffer.from(await imgRes.arrayBuffer())
+          return buffer.toString('base64')
+        }
+        if (pollParsed.imageBase64) return pollParsed.imageBase64
+        throw new Error('图片生成完成但未返回图片数据')
+      }
+      if (pollParsed.status === 'failed') {
+        throw new Error(pollParsed.error || '图片生成失败')
+      }
+    }
+    throw new Error('图片生成超时')
   },
 
   async _generateImageZaiSdk(
@@ -614,7 +731,6 @@ export const aiClient = {
     try {
       const ZAI = (await import('z-ai-web-dev-sdk')).default
       const client = await ZAI.create()
-      // z-ai-sdk CreateImageGenerationBody only supports: model, prompt, size
       const sizeStr = (options?.size ?? '1024x1024') as
         | '1024x1024'
         | '768x1344'
@@ -628,7 +744,6 @@ export const aiClient = {
         prompt,
         size: sizeStr,
       })
-      // z-ai-sdk returns { data: [{ base64: "..." }] }
       const base64 = result?.data?.[0]?.base64
       if (!base64) {
         throw new Error('z-ai-web-dev-sdk 图片生成返回数据为空')
@@ -638,104 +753,11 @@ export const aiClient = {
       const msg = sdkError instanceof Error ? sdkError.message : String(sdkError)
       if (msg.includes('Configuration file not found') || msg.includes('.z-ai-config')) {
         throw new Error(
-          'Z-AI SDK 图片生成不可用。' +
-          '请在设置中配置其他图片生成供应商（如 SiliconFlow、Stability AI）。'
+          'Z-AI SDK 图片生成不可用。请在设置中配置其他图片生成供应商。'
         )
       }
       throw sdkError
     }
-  },
-
-  async _generateImageOpenAI(
-    prompt: string,
-    provider: ProviderConfig,
-    options?: { width?: number; height?: number; size?: string }
-  ): Promise<string> {
-    // OpenAI-compatible endpoint (openai, siliconflow, custom)
-    const url = provider.baseUrl.endsWith('/images/generations')
-      ? provider.baseUrl
-      : `${provider.baseUrl.replace(/\/$/, '')}/images/generations`
-
-    const sizeStr = options?.size ?? '1024x1024'
-
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${provider.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: provider.model,
-        prompt,
-        n: 1,
-        size: sizeStr,
-        response_format: 'b64_json',
-      }),
-    })
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => 'Unknown error')
-      throw new Error(`Image API error (${res.status}): ${text.slice(0, 300)}`)
-    }
-
-    const data = await res.json()
-    const b64 = data.data?.[0]?.b64_json
-    if (b64) return b64
-
-    // If url format returned, fetch and convert
-    const imgUrl = data.data?.[0]?.url
-    if (imgUrl) {
-      const imgRes = await fetch(imgUrl)
-      const buffer = Buffer.from(await imgRes.arrayBuffer())
-      return buffer.toString('base64')
-    }
-
-    throw new Error('Image generation returned no data')
-  },
-
-  async _generateImageStability(
-    prompt: string,
-    negativePrompt: string | undefined,
-    provider: ProviderConfig,
-    options?: { width?: number; height?: number }
-  ): Promise<string> {
-    const url = `${provider.baseUrl.replace(/\/$/, '')}/generation/${provider.model}/text-to-image`
-
-    const body: Record<string, unknown> = {
-      text_prompts: [{ text: prompt, weight: 1 }],
-      cfg_scale: 7,
-      height: options?.height ?? 1024,
-      width: options?.width ?? 1024,
-      steps: 30,
-    }
-    if (negativePrompt) {
-      ;(body.text_prompts as Array<{ text: string; weight: number }>).push({
-        text: negativePrompt,
-        weight: -1,
-      })
-    }
-
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${provider.apiKey}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify(body),
-    })
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => 'Unknown error')
-      throw new Error(`Stability API error (${res.status}): ${text.slice(0, 300)}`)
-    }
-
-    const data = await res.json()
-    const base64 = data.artifacts?.[0]?.base64
-    if (!base64) {
-      throw new Error('Stability API returned no image data')
-    }
-    return base64
   },
 
   async generateCharacterPortrait(
@@ -877,15 +899,28 @@ export const aiClient = {
 
       if (provider.provider === 'z-ai-sdk') {
         videoUrl = await this._generateVideoZai(prompt, firstFrameUrl)
-      } else if (provider.provider === 'siliconflow') {
-        videoUrl = await this._generateVideoSiliconFlow(prompt, firstFrameUrl, provider)
-      } else if (provider.provider === 'seedance') {
-        videoUrl = await this._generateVideoSeedance(prompt, firstFrameUrl, provider)
-      } else if (provider.provider === 'volcengine') {
-        videoUrl = await this._generateVideoVolcengine(prompt, firstFrameUrl, provider)
       } else {
-        // Generic fallback: try SiliconFlow-compatible submit/poll pattern
-        videoUrl = await this._generateVideoSiliconFlow(prompt, firstFrameUrl, provider)
+        // All other providers use the adapter pattern
+        const { getVideoAdapter } = await import('@/lib/adapters/video')
+        const adapter = getVideoAdapter(provider.provider)
+        const config = { baseUrl: provider.baseUrl, apiKey: provider.apiKey, model: provider.model }
+
+        const req = adapter.buildGenerateRequest(config, { prompt, firstFrameUrl, duration: 5 })
+        const res = await fetch(req.url, { method: req.method, headers: req.headers, body: JSON.stringify(req.body) })
+
+        if (!res.ok) {
+          const text = await res.text().catch(() => 'Unknown error')
+          throw new Error(`视频生成API错误 (${res.status}): ${text.slice(0, 300)}`)
+        }
+
+        const result = await res.json()
+        const parsed = adapter.parseGenerateResponse(result)
+
+        if (parsed.videoUrl) {
+          videoUrl = parsed.videoUrl
+        } else if (parsed.isAsync && parsed.taskId) {
+          videoUrl = await this._pollVideoTask(adapter, config, parsed.taskId)
+        }
       }
 
       await db.storyboard.update({
@@ -899,6 +934,35 @@ export const aiClient = {
       })
       throw error
     }
+  },
+
+  async _pollVideoTask(
+    adapter: import('@/lib/adapters/video').VideoProviderAdapter,
+    config: { baseUrl: string; apiKey: string; model: string },
+    taskId: string,
+    maxPolls = 300,
+    interval = 10000
+  ): Promise<string> {
+    const pollReq = adapter.buildPollRequest(config, taskId)
+    if (!pollReq) {
+      throw new Error('该供应商不支持轮询查询，请使用Webhook模式')
+    }
+
+    for (let i = 0; i < maxPolls; i++) {
+      await new Promise((r) => setTimeout(r, interval))
+      const pollRes = await fetch(pollReq.url, { method: pollReq.method, headers: pollReq.headers })
+      const pollData = await pollRes.json()
+      const pollParsed = adapter.parsePollResponse(pollData)
+
+      if (pollParsed.status === 'completed') {
+        if (pollParsed.videoUrl) return pollParsed.videoUrl
+        throw new Error('视频生成完成但未返回视频URL')
+      }
+      if (pollParsed.status === 'failed') {
+        throw new Error(pollParsed.error || '视频生成失败')
+      }
+    }
+    throw new Error('视频生成超时')
   },
 
   async _generateVideoZai(prompt: string, firstFrameUrl?: string): Promise<string> {
@@ -948,141 +1012,6 @@ export const aiClient = {
     }
   },
 
-  async _generateVideoSiliconFlow(
-    prompt: string,
-    _firstFrameUrl: string | undefined,
-    provider: ProviderConfig
-  ): Promise<string> {
-    const url = `${provider.baseUrl.replace(/\/$/, '')}/video/submit`
-
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${provider.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: provider.model || 'ali-video/video-01',
-        prompt,
-        image_size: '1344x768',
-      }),
-    })
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => '')
-      throw new Error(`SiliconFlow Video API error (${res.status}): ${text.slice(0, 300)}`)
-    }
-
-    const data = await res.json()
-    const requestId = data.requestId || data.id
-
-    if (!requestId) {
-      throw new Error('SiliconFlow video submission returned no request ID')
-    }
-
-    // Poll for result
-    const statusUrl = `${provider.baseUrl.replace(/\/$/, '')}/video/status/${requestId}`
-    const maxPolls = 60
-    const pollInterval = 5000
-
-    for (let i = 0; i < maxPolls; i++) {
-      await new Promise((resolve) => setTimeout(resolve, pollInterval))
-      const statusRes = await fetch(statusUrl, {
-        headers: { Authorization: `Bearer ${provider.apiKey}` },
-      })
-      const statusData = await statusRes.json()
-
-      if (statusData.status === 'Succeed' || statusData.status === 'SUCCESS') {
-        return statusData.results?.videos?.[0]?.url || statusData.video_url || ''
-      }
-      if (statusData.status === 'Failed' || statusData.status === 'FAIL') {
-        throw new Error('SiliconFlow video generation failed')
-      }
-    }
-
-    throw new Error('SiliconFlow video generation timed out')
-  },
-
-  async _generateVideoSeedance(
-    prompt: string,
-    firstFrameUrl: string | undefined,
-    provider: ProviderConfig
-  ): Promise<string> {
-    const baseUrl = provider.baseUrl.replace(/\/$/, '')
-    const submitUrl = `${baseUrl}/video/submit`
-
-    const submitBody: Record<string, unknown> = {
-      model: provider.model || 'bytedance-seedance/seedance-2.0-pro-250428',
-      prompt,
-    }
-
-    // Seedance 2.0 supports image-to-video via image_url parameter
-    if (firstFrameUrl) {
-      submitBody.image_url = firstFrameUrl
-    }
-
-    const res = await fetch(submitUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${provider.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(submitBody),
-    })
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => '')
-      throw new Error(`Seedance 2.0 Video API error (${res.status}): ${text.slice(0, 300)}`)
-    }
-
-    const data = await res.json()
-    const requestId = data.requestId || data.id
-
-    if (!requestId) {
-      throw new Error('Seedance 2.0 video submission returned no request ID')
-    }
-
-    // Poll for result
-    const statusUrl = `${baseUrl}/video/status/${requestId}`
-    const maxPolls = 120 // Seedance may take longer
-    const pollInterval = 5000
-
-    for (let i = 0; i < maxPolls; i++) {
-      await new Promise((resolve) => setTimeout(resolve, pollInterval))
-      const statusRes = await fetch(statusUrl, {
-        headers: { Authorization: `Bearer ${provider.apiKey}` },
-      })
-      const statusData = await statusRes.json()
-
-      if (statusData.status === 'Succeed' || statusData.status === 'SUCCESS') {
-        const videoUrl =
-          statusData.results?.videos?.[0]?.url ||
-          statusData.video_url ||
-          statusData.results?.content?.[0]?.url ||
-          ''
-        if (!videoUrl) {
-          throw new Error('Seedance 2.0 video generation succeeded but no URL was returned')
-        }
-        return videoUrl
-      }
-      if (statusData.status === 'Failed' || statusData.status === 'FAIL') {
-        const reason = statusData.reason || statusData.message || 'Unknown reason'
-        throw new Error(`Seedance 2.0 video generation failed: ${reason}`)
-      }
-    }
-
-    throw new Error('Seedance 2.0 video generation timed out')
-  },
-
-  async _generateVideoVolcengine(
-    prompt: string,
-    _firstFrameUrl: string | undefined,
-    _provider: ProviderConfig
-  ): Promise<string> {
-    // Volcengine requires specific SDK, fallback to z-ai-sdk
-    return this._generateVideoZai(prompt, _firstFrameUrl)
-  },
-
   // ---- TTS Generation ----
 
   async generateTts(
@@ -1106,13 +1035,39 @@ export const aiClient = {
 
       if (provider.provider === 'z-ai-sdk') {
         audioDataUrl = await this._generateTtsZai(text, voiceId)
-      } else if (provider.provider === 'openai') {
-        audioDataUrl = await this._generateTtsOpenAI(text, voiceId, provider, voiceStyle)
-      } else if (provider.provider === 'fish-audio') {
-        audioDataUrl = await this._generateTtsFishAudio(text, voiceId, provider)
       } else {
-        // Generic fallback: try OpenAI-compatible endpoint
-        audioDataUrl = await this._generateTtsOpenAI(text, voiceId, provider, voiceStyle)
+        // All other providers use the adapter pattern
+        const { getTTSAdapter } = await import('@/lib/adapters/tts')
+        const adapter = getTTSAdapter(provider.provider)
+        const config = { baseUrl: provider.baseUrl, apiKey: provider.apiKey, model: provider.model }
+
+        const req = adapter.buildGenerateRequest(config, { text, voiceId, speed: 1.0 })
+        const res = await fetch(req.url, { method: req.method, headers: req.headers, body: JSON.stringify(req.body) })
+
+        if (!res.ok) {
+          const text = await res.text().catch(() => 'Unknown error')
+          throw new Error(`TTS API错误 (${res.status}): ${text.slice(0, 300)}`)
+        }
+
+        // Try JSON first, then binary
+        const contentType = res.headers.get('content-type') || ''
+        if (contentType.includes('application/json')) {
+          const jsonResult = await res.json()
+          const parsed = adapter.parseResponse(jsonResult)
+          if (parsed.audioHex) {
+            // MiniMax returns hex-encoded audio
+            const buffer = Buffer.from(parsed.audioHex, 'hex')
+            const base64 = buffer.toString('base64')
+            audioDataUrl = `data:audio/${parsed.format || 'mp3'};base64,${base64}`
+          } else if (parsed.audioBase64) {
+            audioDataUrl = `data:audio/${parsed.format || 'wav'};base64,${parsed.audioBase64}`
+          }
+        } else {
+          // Binary audio response (OpenAI, etc.)
+          const buffer = Buffer.from(await res.arrayBuffer())
+          const base64 = buffer.toString('base64')
+          audioDataUrl = `data:audio/wav;base64,${base64}`
+        }
       }
 
       await db.storyboard.update({

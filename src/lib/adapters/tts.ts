@@ -1,0 +1,193 @@
+import type {
+  ProviderRequest,
+  TTSProviderAdapter,
+} from './types'
+
+// ============================================================================
+// MiniMax TTS Adapter
+// ============================================================================
+
+export class MiniMaxTTSAdapter implements TTSProviderAdapter {
+  buildGenerateRequest(
+    config: { baseUrl: string; apiKey: string; model: string },
+    params: { text: string; voiceId?: string; speed?: number }
+  ): ProviderRequest {
+    const model = config.model || 'speech-2.8-hd'
+    const voiceId = params.voiceId || 'male-qn-qingse'
+    const speed = params.speed ?? 1
+
+    return {
+      url: `${config.baseUrl}/v1/t2a_v2`,
+      method: 'POST',
+      headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
+      body: {
+        model,
+        text: params.text,
+        stream: false,
+        voice_setting: {
+          voice_id: voiceId,
+          speed,
+          vol: 1,
+          pitch: 0,
+        },
+        audio_setting: {
+          sample_rate: 32000,
+          bitrate: 128000,
+          format: 'mp3',
+          channel: 1,
+        },
+        subtitle_enable: false,
+      },
+    }
+  }
+
+  parseResponse(result: unknown): {
+    audioBase64?: string
+    audioHex?: string
+    format: string
+    sampleRate?: number
+  } {
+    const resp = result as Record<string, unknown>
+
+    // Check for error in base_resp
+    const baseResp = resp.base_resp as Record<string, unknown> | undefined
+    if (baseResp && (baseResp.status_code as number) !== 0) {
+      return {
+        format: 'mp3',
+        // Return empty audio on error — caller should check base_resp separately
+        // or we could throw; but the interface doesn't have an error field
+        // so we return minimal info
+      }
+    }
+
+    const data = resp.data as Record<string, unknown> | undefined
+    if (!data) {
+      return { format: 'mp3' }
+    }
+
+    const audioHex = data.audio as string | undefined
+    const extraInfo = data.extra_info as Record<string, unknown> | undefined
+
+    // Convert hex to base64 for consistency
+    const audioBase64 = audioHex ? hexToBase64(audioHex) : undefined
+
+    return {
+      audioBase64,
+      audioHex,
+      format: (extraInfo?.audio_format as string) || 'mp3',
+      sampleRate: extraInfo?.audio_sample_rate as number | undefined,
+    }
+  }
+}
+
+// ============================================================================
+// OpenAI TTS Adapter (compatible with OpenAI, Fish Audio, z-ai-sdk)
+// ============================================================================
+
+export class OpenAITTSAdapter implements TTSProviderAdapter {
+  buildGenerateRequest(
+    config: { baseUrl: string; apiKey: string; model: string },
+    params: { text: string; voiceId?: string; speed?: number }
+  ): ProviderRequest {
+    const model = config.model || 'tts-1'
+    const voice = params.voiceId || 'alloy'
+
+    return {
+      url: `${config.baseUrl}/v1/audio/speech`,
+      method: 'POST',
+      headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
+      body: {
+        model,
+        input: params.text,
+        voice,
+        response_format: 'wav',
+      },
+    }
+  }
+
+  parseResponse(result: unknown): {
+    audioBase64?: string
+    audioHex?: string
+    format: string
+    sampleRate?: number
+  } {
+    // OpenAI TTS returns raw audio binary
+    // When received as ArrayBuffer or already base64 string
+    if (typeof result === 'string') {
+      // Already base64 encoded
+      return {
+        audioBase64: result,
+        format: 'wav',
+      }
+    }
+
+    if (result instanceof ArrayBuffer || result instanceof Uint8Array) {
+      // Convert binary to base64
+      const bytes = result instanceof Uint8Array ? result : new Uint8Array(result)
+      const base64 = uint8ArrayToBase64(bytes)
+      return {
+        audioBase64: base64,
+        format: 'wav',
+      }
+    }
+
+    // If it's a JSON response (some compatible APIs return JSON)
+    if (typeof result === 'object' && result !== null) {
+      const resp = result as Record<string, unknown>
+
+      // Check if there's an audio field (some compatible APIs return JSON with audio)
+      if (resp.audio && typeof resp.audio === 'string') {
+        return {
+          audioBase64: resp.audio as string,
+          format: (resp.format as string) || 'wav',
+        }
+      }
+    }
+
+    return { format: 'wav' }
+  }
+}
+
+// ============================================================================
+// Adapter Registry
+// ============================================================================
+
+export const ttsAdapters: Record<string, TTSProviderAdapter> = {
+  minimax: new MiniMaxTTSAdapter(),
+  openai: new OpenAITTSAdapter(),
+  fish_audio: new OpenAITTSAdapter(), // OpenAI-compatible
+  z_ai_sdk: new OpenAITTSAdapter(), // fallback
+}
+
+export function getTTSAdapter(provider: string): TTSProviderAdapter {
+  return ttsAdapters[provider] || ttsAdapters['minimax']
+}
+
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
+/**
+ * Convert a hex-encoded string to base64
+ */
+function hexToBase64(hexString: string): string {
+  const bytes = new Uint8Array(hexString.length / 2)
+  for (let i = 0; i < hexString.length; i += 2) {
+    const byte = parseInt(hexString.substring(i, i + 2), 16)
+    bytes[i / 2] = byte
+  }
+  return uint8ArrayToBase64(bytes)
+}
+
+/**
+ * Convert a Uint8Array to a base64-encoded string
+ */
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = ''
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i])
+  }
+  return typeof btoa !== 'undefined'
+    ? btoa(binary)
+    : Buffer.from(binary, 'binary').toString('base64')
+}
