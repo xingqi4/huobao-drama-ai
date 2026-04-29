@@ -132,24 +132,28 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
       provider: 'openai',
       name: 'OpenAI DALL·E',
       defaultBaseUrl: 'https://api.openai.com/v1',
-      defaultModel: 'dall-e-3',
+      defaultModel: 'gpt-image-1',
       description: 'OpenAI 图片生成（DALL·E / GPT Image）',
       envKey: 'OPENAI_API_KEY',
       availableModels: [
-        { id: 'dall-e-3', name: 'DALL·E 3', tags: ['推荐'] },
-        { id: 'gpt-image-1', name: 'GPT Image 1', tags: ['最新'] },
+        { id: 'gpt-image-1', name: 'GPT Image 1', tags: ['推荐', '最新'] },
+        { id: 'dall-e-3', name: 'DALL·E 3' },
+        { id: 'dall-e-2', name: 'DALL·E 2', tags: ['经济'] },
       ],
     },
     {
       provider: 'chatfire',
       name: 'Chatfire',
       defaultBaseUrl: 'https://api.chatfire.site',
-      defaultModel: 'gemini-3-pro-image-preview',
-      description: 'Chatfire 统一网关（OpenAI 兼容格式，国内可用）',
+      defaultModel: 'gemini-2.5-flash-preview-image-generation',
+      description: 'Chatfire 统一网关（OpenAI 兼容格式，国内可用，代理 Gemini/OpenAI/MiniMax 等）',
       envKey: 'CHATFIRE_API_KEY',
       availableModels: [
-        { id: 'gemini-3-pro-image-preview', name: 'Gemini 3 Pro Image', tags: ['推荐', '最新'] },
+        { id: 'gemini-2.5-flash-preview-image-generation', name: 'Gemini 2.5 Flash Image', tags: ['推荐', '最新'] },
+        { id: 'gemini-2.0-flash-exp-image-generation', name: 'Gemini 2.0 Flash Image' },
+        { id: 'gpt-image-1', name: 'GPT Image 1' },
         { id: 'dall-e-3', name: 'DALL·E 3' },
+        { id: 'MiniMax-Image-01', name: 'MiniMax Image 01' },
       ],
     },
     {
@@ -160,8 +164,9 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
       description: 'Google Gemini 图片生成（原生REST格式，支持多模态输出）',
       envKey: 'GEMINI_API_KEY',
       availableModels: [
-        { id: 'gemini-2.0-flash-exp-image-generation', name: 'Gemini 2.0 Flash Image', tags: ['推荐', '最新'] },
+        { id: 'gemini-2.0-flash-exp-image-generation', name: 'Gemini 2.0 Flash Image', tags: ['推荐'] },
         { id: 'gemini-2.5-flash-preview-image-generation', name: 'Gemini 2.5 Flash Image', tags: ['最新'] },
+        { id: 'gemini-2.5-pro-preview-image-generation', name: 'Gemini 2.5 Pro Image', tags: ['最新', '高清'] },
       ],
     },
     {
@@ -173,6 +178,7 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
       envKey: 'MINIMAX_API_KEY',
       availableModels: [
         { id: 'MiniMax-Image-01', name: 'MiniMax Image 01', tags: ['推荐'] },
+        { id: 'MiniMax-Image-02', name: 'MiniMax Image 02', tags: ['最新'] },
       ],
     },
     {
@@ -185,6 +191,8 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
       availableModels: [
         { id: 'doubao-seedream-5-0-lite', name: 'Seedream 5.0 Lite', tags: ['推荐', '快速'] },
         { id: 'doubao-seedream-5-0-pro', name: 'Seedream 5.0 Pro', tags: ['高清'] },
+        { id: 'doubao-seedream-4-0', name: 'Seedream 4.0' },
+        { id: 'doubao-seedream-3-5', name: 'Seedream 3.5', tags: ['经济'] },
       ],
     },
     {
@@ -197,6 +205,10 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
       availableModels: [
         { id: 'wan2.6-t2i', name: '万相 2.6', tags: ['推荐', '最新'] },
         { id: 'wanx2.1-t2i-turbo', name: '万相 2.1 Turbo', tags: ['快速'] },
+        { id: 'wanx2.1-t2i-plus', name: '万相 2.1 Plus', tags: ['高清'] },
+        { id: 'wanx-v1', name: '万相 V1', tags: ['经济'] },
+        { id: 'flux-dev', name: 'FLUX Dev' },
+        { id: 'flux-schnell', name: 'FLUX Schnell', tags: ['快速'] },
       ],
     },
     {
@@ -214,11 +226,14 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
       name: 'MiniMax Video',
       defaultBaseUrl: 'https://api.minimax.chat',
       defaultModel: 'MiniMax-Video-01',
-      description: 'MiniMax 视频生成（支持图生视频、首尾帧）',
+      description: 'MiniMax 视频生成（支持图生视频、首尾帧、文生视频）',
       envKey: 'MINIMAX_API_KEY',
       availableModels: [
-        { id: 'MiniMax-Video-01', name: 'MiniMax Video 01', tags: ['推荐'] },
-        { id: 'Video-01-live', name: 'Video 01 Live', tags: ['直播'] },
+        { id: 'MiniMax-Video-01', name: 'Video-01', tags: ['推荐'] },
+        { id: 'Video-01-live', name: 'Video-01 Live', tags: ['直播'] },
+        { id: 'T2V-01', name: 'T2V-01 文生视频', tags: ['最新'] },
+        { id: 'T2V-01-Director', name: 'T2V-01 Director 导演模式', tags: ['最新', '专业'] },
+        { id: 'S2V-01', name: 'S2V-01 主体参考视频', tags: ['最新'] },
       ],
     },
     {
@@ -226,11 +241,13 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
       name: '火山引擎 Seedance',
       defaultBaseUrl: 'https://visual.volcengineapi.com',
       defaultModel: 'doubao-seedance-1-5-pro-251215',
-      description: '火山引擎 Seedance 视频生成（图生视频，国内可用）',
+      description: '火山引擎 Seedance 视频生成（图生视频/文生视频，国内可用）',
       envKey: 'VOLCENGINE_API_KEY',
       availableModels: [
         { id: 'doubao-seedance-1-5-pro-251215', name: 'Seedance 1.5 Pro', tags: ['推荐'] },
         { id: 'doubao-seedance-1-5-lite-250428', name: 'Seedance 1.5 Lite', tags: ['快速'] },
+        { id: 'doubao-seedance-1-0-pro-250528', name: 'Seedance 1.0 Pro' },
+        { id: 'doubao-seedance-1-0-lite-250528', name: 'Seedance 1.0 Lite', tags: ['经济'] },
       ],
     },
     {
@@ -238,11 +255,13 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
       name: 'Vidu',
       defaultBaseUrl: 'https://api.vidu.cn',
       defaultModel: 'viduq3-turbo',
-      description: 'Vidu 视频生成（图生视频，Webhook回调模式）',
+      description: 'Vidu 视频生成（图生视频/文生视频，Webhook回调模式）',
       envKey: 'VIDU_API_KEY',
       availableModels: [
         { id: 'viduq3-turbo', name: 'Vidu Q3 Turbo', tags: ['推荐', '快速'] },
         { id: 'viduq3', name: 'Vidu Q3', tags: ['高清'] },
+        { id: 'vidu2', name: 'Vidu 2.0', tags: ['最新'] },
+        { id: 'vidu1.5', name: 'Vidu 1.5', tags: ['经济'] },
       ],
     },
     {
@@ -250,11 +269,15 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
       name: '阿里万相视频',
       defaultBaseUrl: 'https://dashscope.aliyuncs.com',
       defaultModel: 'wan2.6-i2v-flash',
-      description: '阿里通义万相视频生成（DashScope API，国内可用）',
+      description: '阿里通义万相视频生成（DashScope API，图生视频/文生视频，国内可用）',
       envKey: 'ALI_API_KEY',
       availableModels: [
         { id: 'wan2.6-i2v-flash', name: '万相 2.6 I2V Flash', tags: ['推荐', '快速'] },
         { id: 'wan2.6-i2v-pro', name: '万相 2.6 I2V Pro', tags: ['高清'] },
+        { id: 'wan2.1-i2v-turbo', name: '万相 2.1 I2V Turbo', tags: ['快速'] },
+        { id: 'wan2.1-i2v-plus', name: '万相 2.1 I2V Plus' },
+        { id: 'wan2.1-t2v-turbo', name: '万相 2.1 T2V Turbo', tags: ['最新'] },
+        { id: 'wan2.1-t2v-plus', name: '万相 2.1 T2V Plus', tags: ['最新'] },
       ],
     },
     {
@@ -272,11 +295,12 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
       name: 'MiniMax TTS',
       defaultBaseUrl: 'https://api.minimax.chat',
       defaultModel: 'speech-2.8-hd',
-      description: 'MiniMax 语音合成（推荐，高质量中文语音）',
+      description: 'MiniMax 语音合成（推荐，高质量中文语音，情感丰富）',
       envKey: 'MINIMAX_API_KEY',
       availableModels: [
         { id: 'speech-2.8-hd', name: 'Speech 2.8 HD', tags: ['推荐', '高清'] },
         { id: 'speech-2.6', name: 'Speech 2.6', tags: ['快速'] },
+        { id: 'speech-01', name: 'Speech 01', tags: ['经济'] },
       ],
     },
     {
@@ -284,7 +308,7 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
       name: 'OpenAI TTS',
       defaultBaseUrl: 'https://api.openai.com/v1',
       defaultModel: 'tts-1',
-      description: 'OpenAI 语音合成',
+      description: 'OpenAI 语音合成（海外可用）',
       envKey: 'OPENAI_API_KEY',
       availableModels: [
         { id: 'tts-1', name: 'TTS-1', tags: ['推荐'] },
@@ -300,7 +324,20 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
       description: 'Chatfire TTS 网关（MiniMax 兼容，国内可用）',
       envKey: 'CHATFIRE_API_KEY',
       availableModels: [
-        { id: 'speech-2.8-hd', name: 'Speech 2.8 HD', tags: ['推荐'] },
+        { id: 'speech-2.8-hd', name: 'Speech 2.8 HD', tags: ['推荐', '高清'] },
+        { id: 'speech-2.6', name: 'Speech 2.6', tags: ['快速'] },
+      ],
+    },
+    {
+      provider: 'fish-audio',
+      name: 'Fish Audio',
+      defaultBaseUrl: 'https://api.fish.audio',
+      defaultModel: 'fish-speech-1.5',
+      description: 'Fish Audio 语音合成（OpenAI兼容，支持声音克隆）',
+      envKey: 'FISH_AUDIO_API_KEY',
+      availableModels: [
+        { id: 'fish-speech-1.5', name: 'Fish Speech 1.5', tags: ['推荐', '最新'] },
+        { id: 'fish-speech-1.4', name: 'Fish Speech 1.4' },
       ],
     },
     {
