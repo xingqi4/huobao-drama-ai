@@ -9,7 +9,7 @@ export type AgentType =
   | 'extractor'
   | 'storyboard_breaker'
   | 'voice_assigner'
-  | 'grid_prompt_generator'
+  | 'grid_prompt_generator' // deprecated: merged into storyboard_breaker
 
 export interface ToolDefinition {
   name: string
@@ -58,9 +58,9 @@ export interface AgentExecutionResult {
 export const AGENT_NAMES: Record<AgentType, string> = {
   script_rewriter: '剧本改写专家',
   extractor: '角色场景提取器',
-  storyboard_breaker: '分镜拆解专家',
+  storyboard_breaker: '分镜拆解+提示词专家',
   voice_assigner: '音色分配师',
-  grid_prompt_generator: '宫格提示词生成器',
+  grid_prompt_generator: '提示词增强(已合并)',
 }
 
 export const AGENT_DESCRIPTIONS: Record<AgentType, string> = {
@@ -69,11 +69,11 @@ export const AGENT_DESCRIPTIONS: Record<AgentType, string> = {
   extractor:
     '从剧本中智能提取角色信息和场景描述，支持去重和合并',
   storyboard_breaker:
-    '将剧本拆解为分镜序列，包含镜头类型、摄影角度、提示词等',
+    '将剧本拆解为分镜序列，同时生成专业级imagePrompt和videoPrompt，一步到位',
   voice_assigner:
     '为角色自动分配合适的TTS音色',
   grid_prompt_generator:
-    '生成角色/场景/宫格图的提示词',
+    '已合并到分镜拆解专家，单条提示词增强可直接使用分镜Agent',
 }
 
 export const ALL_AGENT_TYPES: AgentType[] = [
@@ -81,5 +81,5 @@ export const ALL_AGENT_TYPES: AgentType[] = [
   'extractor',
   'storyboard_breaker',
   'voice_assigner',
-  'grid_prompt_generator',
+  // grid_prompt_generator merged into storyboard_breaker
 ]

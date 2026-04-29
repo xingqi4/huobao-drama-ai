@@ -400,17 +400,17 @@ export function EpisodeWorkspace() {
     }
   }
 
-  // ── AI: Enhance single shot prompt (via grid_prompt_generator Agent) ──
+  // ── AI: Enhance single shot prompt (via storyboard_breaker Agent) ──
 
   const handleEnhanceShotPrompt = async (storyboard: Storyboard) => {
     if (!selectedEpisodeId || !selectedDramaId) return
     setAiLoading(true)
     try {
       await agentExec.startAgent(
-        'grid_prompt_generator',
+        'storyboard_breaker',
         selectedEpisodeId,
         selectedDramaId,
-        `请为镜头${storyboard.shotNumber}生成专业的AI绘图提示词。先使用read_shots读取分镜数据，然后为镜头${storyboard.shotNumber}生成宫格图提示词（generate_grid_prompt）。确保提示词使用英文，风格一致。`,
+        `请为镜头${storyboard.shotNumber}重新生成更专业的imagePrompt和videoPrompt。先使用read_storyboard_context读取上下文，然后使用update_storyboard更新镜头${storyboard.shotNumber}的提示词。imagePrompt必须包含6个维度（风格+构图+角色+场景+光线+画质），videoPrompt必须使用XML格式。`,
         { model: workspaceModels.llm || undefined }
       )
       toast({ title: `镜头 ${storyboard.shotNumber} 提示词已增强` })

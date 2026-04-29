@@ -170,24 +170,11 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
       ],
     },
     {
-      provider: 'nvidia',
-      name: 'NVIDIA Image',
-      defaultBaseUrl: 'https://integrate.api.nvidia.com/v1',
-      defaultModel: 'stabilityai/stable-diffusion-xl',
-      description: 'NVIDIA NIM 图片生成（SDXL、Stable Diffusion 等）',
-      envKey: 'NVIDIA_API_KEY',
-      availableModels: [
-        { id: 'stabilityai/stable-diffusion-xl', name: 'SDXL (NIM)', tags: ['推荐'] },
-        { id: 'stabilityai/stable-diffusion-3-medium', name: 'SD 3 Medium (NIM)' },
-        { id: 'stabilityai/stable-diffusion-3-large', name: 'SD 3 Large (NIM)' },
-      ],
-    },
-    {
       provider: 'z-ai-sdk',
-      name: 'Z-AI SDK',
+      name: 'Z-AI SDK 图片',
       defaultBaseUrl: '',
-      defaultModel: 'dall-e-3',
-      description: '内置 z-ai-web-dev-sdk（仅本地开发可用）',
+      defaultModel: '',
+      description: '内置 z-ai-web-dev-sdk 图片生成（本地开发可用，无需API Key）',
       envKey: '',
     },
     {
@@ -237,7 +224,7 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
       name: 'Z-AI SDK 视频',
       defaultBaseUrl: '',
       defaultModel: '',
-      description: '内置 z-ai-web-dev-sdk 视频生成（仅本地开发可用）',
+      description: '内置 z-ai-web-dev-sdk 视频生成（本地开发可用，无需API Key）',
       envKey: '',
     },
     {
@@ -271,17 +258,7 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
       description: 'Fish Audio 语音合成',
       envKey: 'FISH_AUDIO_API_KEY',
     },
-    {
-      provider: 'nvidia',
-      name: 'NVIDIA Riva TTS',
-      defaultBaseUrl: 'https://integrate.api.nvidia.com/v1',
-      defaultModel: 'nvidia/riva-tts',
-      description: 'NVIDIA Riva 语音合成（支持多语言）',
-      envKey: 'NVIDIA_API_KEY',
-      availableModels: [
-        { id: 'nvidia/riva-tts', name: 'Riva TTS', tags: ['推荐'] },
-      ],
-    },
+
     {
       provider: 'volcengine',
       name: '火山引擎 TTS',
@@ -295,7 +272,7 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
       name: 'Z-AI SDK TTS',
       defaultBaseUrl: '',
       defaultModel: '',
-      description: '内置 z-ai-web-dev-sdk 语音合成（仅本地开发可用）',
+      description: '内置 z-ai-web-dev-sdk 语音合成（本地开发可用，无需API Key）',
       envKey: '',
     },
     {
@@ -619,108 +596,54 @@ export const aiClient = {
     }
 
     // Provider-specific implementations
-    if (provider.provider === 'nvidia') {
-      return this._generateImageNvidia(prompt, negativePrompt, provider, options)
-    } else if (provider.provider === 'openai' || provider.provider === 'z-ai-sdk') {
-      return this._generateImageOpenAI(prompt, provider, options)
-    } else if (provider.provider === 'siliconflow') {
-      return this._generateImageOpenAI(prompt, provider, options)
+    if (provider.provider === 'z-ai-sdk') {
+      return this._generateImageZaiSdk(prompt, provider, options)
     } else if (provider.provider === 'stability') {
       return this._generateImageStability(prompt, negativePrompt, provider, options)
     } else {
-      // Generic OpenAI-compatible fallback
+      // OpenAI-compatible (openai, siliconflow, custom) fallback
       return this._generateImageOpenAI(prompt, provider, options)
     }
   },
 
-  async _generateImageNvidia(
+  async _generateImageZaiSdk(
     prompt: string,
-    negativePrompt: string | undefined,
     provider: ProviderConfig,
     options?: { width?: number; height?: number; size?: string }
   ): Promise<string> {
-    // Try OpenAI-compatible image generation endpoint first
-    // NVIDIA NIM now supports /v1/images/generations for some models
-    const baseUrl = provider.baseUrl.replace(/\/$/, '')
-
-    // Try the OpenAI-compatible endpoint
-    const url = `${baseUrl}/images/generations`
-    const sizeStr = options?.size ?? '1024x1024'
-
-    const body: Record<string, unknown> = {
-      model: provider.model || 'stabilityai/stable-diffusion-xl',
-      prompt,
-      n: 1,
-      size: sizeStr,
-      response_format: 'b64_json',
-    }
-    if (negativePrompt) {
-      body.negative_prompt = negativePrompt
-    }
-
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${provider.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    })
-
-    if (res.ok) {
-      const data = await res.json()
-      const b64 = data.data?.[0]?.b64_json
-      if (b64) return b64
-
-      const imgUrl = data.data?.[0]?.url
-      if (imgUrl) {
-        const imgRes = await fetch(imgUrl)
-        const buffer = Buffer.from(await imgRes.arrayBuffer())
-        return buffer.toString('base64')
+    try {
+      const ZAI = (await import('z-ai-web-dev-sdk')).default
+      const client = await ZAI.create()
+      // z-ai-sdk CreateImageGenerationBody only supports: model, prompt, size
+      const sizeStr = (options?.size ?? '1024x1024') as
+        | '1024x1024'
+        | '768x1344'
+        | '864x1152'
+        | '1344x768'
+        | '1152x864'
+        | '1440x720'
+        | '720x1440'
+      const result = await client.images.generations.create({
+        model: provider.model || undefined,
+        prompt,
+        size: sizeStr,
+      })
+      // z-ai-sdk returns { data: [{ base64: "..." }] }
+      const base64 = result?.data?.[0]?.base64
+      if (!base64) {
+        throw new Error('z-ai-web-dev-sdk 图片生成返回数据为空')
       }
-
-      // Some NVIDIA models return { art: "base64..." }
-      if (data.art) return data.art
-
-      throw new Error('NVIDIA image generation returned no data')
+      return base64
+    } catch (sdkError) {
+      const msg = sdkError instanceof Error ? sdkError.message : String(sdkError)
+      if (msg.includes('Configuration file not found') || msg.includes('.z-ai-config')) {
+        throw new Error(
+          'Z-AI SDK 图片生成不可用。' +
+          '请在设置中配置其他图片生成供应商（如 SiliconFlow、Stability AI）。'
+        )
+      }
+      throw sdkError
     }
-
-    // Fallback: try the legacy SDXL-specific endpoint format
-    const legacyUrl = `https://ai.api.nvidia.com/v1/genai/${provider.model || 'stabilityai/stable-diffusion-xl'}`
-    const text_prompts: Array<{ text: string; weight: number }> = [
-      { text: prompt, weight: 1 },
-    ]
-    if (negativePrompt) {
-      text_prompts.push({ text: negativePrompt, weight: -1 })
-    }
-
-    const legacyRes = await fetch(legacyUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${provider.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        text_prompts,
-        cfg_scale: 7,
-        height: options?.height ?? 1024,
-        width: options?.width ?? 1024,
-        steps: 50,
-        sampler: 'K_DPMPP_2M',
-        seed: 0,
-      }),
-    })
-
-    if (!legacyRes.ok) {
-      const text = await legacyRes.text().catch(() => 'Unknown error')
-      throw new Error(`NVIDIA Image API error (${legacyRes.status}): ${text.slice(0, 300)}`)
-    }
-
-    const legacyData = await legacyRes.json()
-    if (!legacyData.art) {
-      throw new Error('NVIDIA image generation returned empty result')
-    }
-    return legacyData.art
   },
 
   async _generateImageOpenAI(
@@ -728,45 +651,7 @@ export const aiClient = {
     provider: ProviderConfig,
     options?: { width?: number; height?: number; size?: string }
   ): Promise<string> {
-    // Use z-ai-sdk if provider is z-ai-sdk
-    if (provider.provider === 'z-ai-sdk') {
-      try {
-        const ZAI = (await import('z-ai-web-dev-sdk')).default
-        const client = await ZAI.create()
-        // z-ai-sdk CreateImageGenerationBody only supports: model, prompt, size
-        // It does NOT support n, response_format, negative_prompt etc.
-        const sizeStr = (options?.size ?? '1024x1024') as
-          | '1024x1024'
-          | '768x1344'
-          | '864x1152'
-          | '1344x768'
-          | '1152x864'
-          | '1440x720'
-          | '720x1440'
-        const result = await client.images.generations.create({
-          model: provider.model || undefined,
-          prompt,
-          size: sizeStr,
-        })
-        // z-ai-sdk returns { data: [{ base64: "..." }] }
-        const base64 = result?.data?.[0]?.base64
-        if (!base64) {
-          throw new Error('z-ai-web-dev-sdk 图片生成返回数据为空')
-        }
-        return base64
-      } catch (sdkError) {
-        const msg = sdkError instanceof Error ? sdkError.message : String(sdkError)
-        if (msg.includes('Configuration file not found') || msg.includes('.z-ai-config')) {
-          throw new Error(
-            'Z-AI SDK 仅在本地开发环境可用，Vercel 部署环境不支持。' +
-            '请在设置中配置其他图片生成供应商（如 SiliconFlow、OpenAI、Stability AI）。'
-          )
-        }
-        throw sdkError
-      }
-    }
-
-    // OpenAI-compatible endpoint
+    // OpenAI-compatible endpoint (openai, siliconflow, custom)
     const url = provider.baseUrl.endsWith('/images/generations')
       ? provider.baseUrl
       : `${provider.baseUrl.replace(/\/$/, '')}/images/generations`
@@ -999,8 +884,8 @@ export const aiClient = {
       } else if (provider.provider === 'volcengine') {
         videoUrl = await this._generateVideoVolcengine(prompt, firstFrameUrl, provider)
       } else {
-        // Generic: try z-ai-sdk as fallback
-        videoUrl = await this._generateVideoZai(prompt, firstFrameUrl)
+        // Generic fallback: try SiliconFlow-compatible submit/poll pattern
+        videoUrl = await this._generateVideoSiliconFlow(prompt, firstFrameUrl, provider)
       }
 
       await db.storyboard.update({
@@ -1225,10 +1110,9 @@ export const aiClient = {
         audioDataUrl = await this._generateTtsOpenAI(text, voiceId, provider, voiceStyle)
       } else if (provider.provider === 'fish-audio') {
         audioDataUrl = await this._generateTtsFishAudio(text, voiceId, provider)
-      } else if (provider.provider === 'nvidia') {
-        audioDataUrl = await this._generateTtsNvidia(text, voiceId, provider)
       } else {
-        audioDataUrl = await this._generateTtsZai(text, voiceId)
+        // Generic fallback: try OpenAI-compatible endpoint
+        audioDataUrl = await this._generateTtsOpenAI(text, voiceId, provider, voiceStyle)
       }
 
       await db.storyboard.update({
@@ -1351,39 +1235,6 @@ export const aiClient = {
     return `data:audio/wav;base64,${base64Audio}`
   },
 
-  async _generateTtsNvidia(
-    text: string,
-    voiceId: string | undefined,
-    provider: ProviderConfig
-  ): Promise<string> {
-    // NVIDIA Riva TTS uses OpenAI-compatible /audio/speech endpoint
-    const baseUrl = provider.baseUrl.replace(/\/$/, '')
-    const url = `${baseUrl}/audio/speech`
-
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${provider.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: provider.model || 'nvidia/riva-tts',
-        input: text,
-        voice: voiceId || 'default',
-        response_format: 'wav',
-      }),
-    })
-
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '')
-      throw new Error(`NVIDIA Riva TTS API error (${res.status}): ${errText.slice(0, 300)}`)
-    }
-
-    const buffer = Buffer.from(await res.arrayBuffer())
-    const base64Audio = buffer.toString('base64')
-    return `data:audio/wav;base64,${base64Audio}`
-  },
-
   // ---- Connection Test ----
 
   async testConnection(category: AiCategory): Promise<{
@@ -1415,12 +1266,46 @@ export const aiClient = {
         }
       }
 
-      // For other categories, just verify API key is set
+      if (category === 'image') {
+        // Test image generation with a minimal request
+        const base64 = await this.generateImage('a single red dot on white background')
+        const preview = base64 ? `图片生成成功，数据大小: ${(base64.length / 1024).toFixed(1)}KB` : '图片生成返回空'
+        return {
+          success: true,
+          provider: provider.name,
+          model: provider.model,
+          responsePreview: preview,
+        }
+      }
+
+      if (category === 'tts') {
+        // Test TTS with a short phrase
+        const audioDataUrl = await this._generateTtsOpenAI('你好', 'alloy', provider)
+        const preview = audioDataUrl ? `语音合成成功，数据大小: ${(audioDataUrl.length / 1024).toFixed(1)}KB` : '语音合成返回空'
+        return {
+          success: true,
+          provider: provider.name,
+          model: provider.model,
+          responsePreview: preview,
+        }
+      }
+
+      if (category === 'video') {
+        // Video generation is async and takes too long for a connection test
+        // Just verify the provider config is set
+        return {
+          success: true,
+          provider: provider.name,
+          model: provider.model,
+          responsePreview: `${provider.name} 视频生成已配置（实际生成需较长时间，跳过测试）`,
+        }
+      }
+
       return {
         success: true,
         provider: provider.name,
         model: provider.model,
-        responsePreview: `${provider.name} API Key 已配置`,
+        responsePreview: `${provider.name} 已配置`,
       }
     } catch (error) {
       return {
