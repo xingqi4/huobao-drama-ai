@@ -3,8 +3,10 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  directUrl         = env("DIRECT_URL")
+  relationMode      = "prisma"
 }
 
 // ============ Drama Project ============
@@ -112,7 +114,7 @@ model Storyboard {
   episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
 }
 
-// ============ Character Appearance ============
+// ============ Character Appearance (NEW - 核心资产沉淀) ============
 model CharacterAppearance {
   id               String   @id @default(cuid())
   characterId      String
@@ -132,7 +134,7 @@ model CharacterAppearance {
   @@unique([characterId, appearanceIndex])
 }
 
-// ============ Scene Image ============
+// ============ Scene Image (NEW - 核心资产沉淀) ============
 model SceneImage {
   id          String   @id @default(cuid())
   sceneId     String
@@ -147,7 +149,7 @@ model SceneImage {
   scene Scene @relation(fields: [sceneId], references: [id], onDelete: Cascade)
 }
 
-// ============ Image Generation ============
+// ============ Image Generation (NEW - 图片生成追踪) ============
 model ImageGeneration {
   id              String   @id @default(cuid())
   storyboardId    String?

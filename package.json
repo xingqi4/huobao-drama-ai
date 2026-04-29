@@ -3,13 +3,13 @@
   "version": "0.2.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3000 2>&1 | tee dev.log",
+    "dev": "node scripts/pre-dev.js && next dev -p 3000 2>&1 | tee dev.log",
     "build": "node scripts/build.js && next build",
     "postinstall": "node scripts/postinstall.js",
     "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
     "lint": "eslint .",
-    "db:push": "prisma db push",
-    "db:generate": "prisma generate",
+    "db:push": "node scripts/pre-dev.js",
+    "db:generate": "node scripts/pre-dev.js",
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset"
   },
