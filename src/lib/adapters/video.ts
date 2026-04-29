@@ -3,6 +3,8 @@ import type {
   VideoProviderAdapter,
 } from './types'
 
+import { joinProviderUrl } from './url'
+
 // ============================================================================
 // MiniMax Video Adapter
 // ============================================================================
@@ -39,7 +41,7 @@ export class MiniMaxVideoAdapter implements VideoProviderAdapter {
     }
 
     return {
-      url: `${config.baseUrl}/v1/video_generation`,
+      url: joinProviderUrl(config.baseUrl, '/v1', '/video_generation'),
       method: 'POST',
       headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
       body: { model, content },
@@ -66,7 +68,7 @@ export class MiniMaxVideoAdapter implements VideoProviderAdapter {
     taskId: string
   ): ProviderRequest | null {
     return {
-      url: `${config.baseUrl}/v1/video_generation/task/${taskId}`,
+      url: joinProviderUrl(config.baseUrl, '/v1', `/video_generation/task/${taskId}`),
       method: 'GET',
       headers: { Authorization: `Bearer ${config.apiKey}` },
       body: null,
@@ -129,7 +131,7 @@ export class VolcEngineVideoAdapter implements VideoProviderAdapter {
     }
 
     return {
-      url: `${config.baseUrl}/api/v3/contents/generations/tasks`,
+      url: joinProviderUrl(config.baseUrl, '/api/v3', '/contents/generations/tasks'),
       method: 'POST',
       headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
       body: {
@@ -163,7 +165,7 @@ export class VolcEngineVideoAdapter implements VideoProviderAdapter {
     taskId: string
   ): ProviderRequest | null {
     return {
-      url: `${config.baseUrl}/api/v3/contents/generations/tasks/${taskId}`,
+      url: joinProviderUrl(config.baseUrl, '/api/v3', `/contents/generations/tasks/${taskId}`),
       method: 'GET',
       headers: { Authorization: `Bearer ${config.apiKey}` },
       body: null,
@@ -241,7 +243,7 @@ export class ViduVideoAdapter implements VideoProviderAdapter {
     }
 
     return {
-      url: `${config.baseUrl}/ent/v2/img2video`,
+      url: joinProviderUrl(config.baseUrl, '/ent/v2', '/img2video'),
       method: 'POST',
       // Vidu uses "Token" prefix, NOT "Bearer"
       headers: { Authorization: `Token ${config.apiKey}`, 'Content-Type': 'application/json' },
@@ -318,7 +320,7 @@ export class AliVideoAdapter implements VideoProviderAdapter {
     }
 
     return {
-      url: `${baseUrl}/api/v1/services/aigc/video-generation/video-synthesis`,
+      url: joinProviderUrl(baseUrl, '/api/v1', '/services/aigc/video-generation/video-synthesis'),
       method: 'POST',
       headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
       body: {
@@ -356,7 +358,7 @@ export class AliVideoAdapter implements VideoProviderAdapter {
     const baseUrl = config.baseUrl || 'https://dashscope.aliyuncs.com'
 
     return {
-      url: `${baseUrl}/api/v1/tasks/${taskId}`,
+      url: joinProviderUrl(baseUrl, '/api/v1', `/tasks/${taskId}`),
       method: 'GET',
       headers: { Authorization: `Bearer ${config.apiKey}` },
       body: null,

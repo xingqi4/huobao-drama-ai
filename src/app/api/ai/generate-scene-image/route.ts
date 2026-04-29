@@ -4,9 +4,14 @@ import { aiClient } from '@/lib/ai-config'
 
 // POST /api/ai/generate-scene-image - AI Generate Scene Image
 // Generates an image from a scene's prompt and saves it to the scene record
+// Updated: supports referenceImages, creates SceneImage record
 export async function POST(request: NextRequest) {
   try {
-    const { sceneId, style } = await request.json()
+    const { sceneId, style, referenceImages } = await request.json() as {
+      sceneId: string
+      style?: string
+      referenceImages?: string[]
+    }
 
     if (!sceneId) {
       return NextResponse.json(
@@ -43,10 +48,11 @@ export async function POST(request: NextRequest) {
 
     const negativePrompt = 'blurry, low quality, amateur, cartoon, anime, watermark, text overlay, people, characters'
 
-    // Generate scene image
+    // Generate scene image with optional reference images
     const base64Image = await aiClient.generateImage(scenePrompt, negativePrompt, {
       width: 1344,
       height: 768,
+      referenceImages,
     })
 
     // Convert base64 to data URL
@@ -58,7 +64,34 @@ export async function POST(request: NextRequest) {
       data: { imageUrl },
     })
 
-    return NextResponse.json({ scene: updatedScene, imageUrl })
+    // Create a SceneImage record
+    const sceneImage = await db.sceneImage.create({
+      data: {
+        sceneId,
+        description: scenePrompt,
+        imageUrl,
+        timeOfDay: scene.timeOfDay || '',
+        angle: 'wide',
+        isSelected: false,
+      },
+    })
+
+    // If no other image is selected for this scene, auto-select this one
+    const selectedCount = await db.sceneImage.count({
+      where: { sceneId, isSelected: true },
+    })
+    if (selectedCount === 0) {
+      await db.sceneImage.update({
+        where: { id: sceneImage.id },
+        data: { isSelected: true },
+      })
+    }
+
+    return NextResponse.json({
+      scene: updatedScene,
+      imageUrl,
+      sceneImage,
+    })
   } catch (error) {
     console.error('Failed to generate scene image:', error)
     const message = error instanceof Error ? error.message : 'Failed to generate scene image'

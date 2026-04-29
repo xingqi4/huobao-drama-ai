@@ -200,14 +200,6 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
       ],
     },
     {
-      provider: 'z-ai-sdk',
-      name: 'Z-AI SDK 图片',
-      defaultBaseUrl: '',
-      defaultModel: '',
-      description: '内置 z-ai-web-dev-sdk 图片生成（本地开发可用，无需API Key）',
-      envKey: '',
-    },
-    {
       provider: 'custom',
       name: '自定义图片接口',
       defaultBaseUrl: '',
@@ -266,14 +258,6 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
       ],
     },
     {
-      provider: 'z-ai-sdk',
-      name: 'Z-AI SDK 视频',
-      defaultBaseUrl: '',
-      defaultModel: '',
-      description: '内置 z-ai-web-dev-sdk 视频生成（本地开发可用，无需API Key）',
-      envKey: '',
-    },
-    {
       provider: 'custom',
       name: '自定义视频接口',
       defaultBaseUrl: '',
@@ -320,14 +304,6 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
       ],
     },
     {
-      provider: 'z-ai-sdk',
-      name: 'Z-AI SDK TTS',
-      defaultBaseUrl: '',
-      defaultModel: '',
-      description: '内置 z-ai-web-dev-sdk 语音合成（本地开发可用，无需API Key）',
-      envKey: '',
-    },
-    {
       provider: 'custom',
       name: '自定义 TTS 接口',
       defaultBaseUrl: '',
@@ -365,7 +341,7 @@ export async function getActiveProvider(category: AiCategory): Promise<ProviderC
 
   // Check if the provider is explicitly set as active in DB
   // Some providers (like z-ai-sdk) don't need an API key
-  const noKeyProviders = ['z-ai-sdk']
+  const noKeyProviders: string[] = []
 
   if (dbProvider) {
     // Use DB record if it's active — even if apiKey is empty
@@ -647,12 +623,7 @@ export const aiClient = {
       throw new Error('未配置图片生成供应商。请在设置中配置 API Key。')
     }
 
-    // z-ai-sdk uses its own SDK (not HTTP adapter)
-    if (provider.provider === 'z-ai-sdk') {
-      return this._generateImageZaiSdk(prompt, provider, options)
-    }
-
-    // All other providers use the adapter pattern
+    // All providers use the adapter pattern
     const { getImageAdapter } = await import('@/lib/adapters/image')
     const adapter = getImageAdapter(provider.provider)
     const config = { baseUrl: provider.baseUrl, apiKey: provider.apiKey, model: provider.model }
@@ -723,48 +694,12 @@ export const aiClient = {
     throw new Error('图片生成超时')
   },
 
-  async _generateImageZaiSdk(
-    prompt: string,
-    provider: ProviderConfig,
-    options?: { width?: number; height?: number; size?: string }
-  ): Promise<string> {
-    try {
-      const ZAI = (await import('z-ai-web-dev-sdk')).default
-      const client = await ZAI.create()
-      const sizeStr = (options?.size ?? '1024x1024') as
-        | '1024x1024'
-        | '768x1344'
-        | '864x1152'
-        | '1344x768'
-        | '1152x864'
-        | '1440x720'
-        | '720x1440'
-      const result = await client.images.generations.create({
-        model: provider.model || undefined,
-        prompt,
-        size: sizeStr,
-      })
-      const base64 = result?.data?.[0]?.base64
-      if (!base64) {
-        throw new Error('z-ai-web-dev-sdk 图片生成返回数据为空')
-      }
-      return base64
-    } catch (sdkError) {
-      const msg = sdkError instanceof Error ? sdkError.message : String(sdkError)
-      if (msg.includes('Configuration file not found') || msg.includes('.z-ai-config')) {
-        throw new Error(
-          'Z-AI SDK 图片生成不可用。请在设置中配置其他图片生成供应商。'
-        )
-      }
-      throw sdkError
-    }
-  },
-
   async generateCharacterPortrait(
     description: string,
     style?: string,
     characterName?: string,
-    personality?: string
+    personality?: string,
+    referenceImages?: string[]
   ): Promise<string> {
     // Production-quality character portrait prompt with 6+ dimensions
     // Based on grid_prompt_generator SKILL methodology
@@ -793,6 +728,7 @@ export const aiClient = {
     return this.generateImage(portraitPrompt, negativePrompt, {
       width: 1024,
       height: 1024,
+      referenceImages,
     })
   },
 
@@ -801,7 +737,8 @@ export const aiClient = {
     atmosphere?: string,
     shotType?: string,
     cameraAngle?: string,
-    style?: string
+    style?: string,
+    referenceImages?: string[]
   ): Promise<string> {
     // Production-quality storyboard frame prompt with 6+ dimensions
     const styleTag = style || 'cinematic'
@@ -828,6 +765,7 @@ export const aiClient = {
     return this.generateImage(framePrompt, negativePrompt, {
       width: 1344,
       height: 768,
+      referenceImages,
     })
   },
 
@@ -835,7 +773,8 @@ export const aiClient = {
     location: string,
     timeOfDay?: string,
     style?: string,
-    weather?: string
+    weather?: string,
+    referenceImages?: string[]
   ): Promise<string> {
     // Production-quality scene/establishing shot prompt with 6+ dimensions
     const styleTag = style || 'cinematic'
@@ -873,6 +812,7 @@ export const aiClient = {
     return this.generateImage(scenePrompt, negativePrompt, {
       width: 1344,
       height: 768,
+      referenceImages,
     })
   },
 
@@ -897,30 +837,26 @@ export const aiClient = {
     try {
       let videoUrl = ''
 
-      if (provider.provider === 'z-ai-sdk') {
-        videoUrl = await this._generateVideoZai(prompt, firstFrameUrl)
-      } else {
-        // All other providers use the adapter pattern
-        const { getVideoAdapter } = await import('@/lib/adapters/video')
-        const adapter = getVideoAdapter(provider.provider)
-        const config = { baseUrl: provider.baseUrl, apiKey: provider.apiKey, model: provider.model }
+      // All providers use the adapter pattern
+      const { getVideoAdapter } = await import('@/lib/adapters/video')
+      const adapter = getVideoAdapter(provider.provider)
+      const config = { baseUrl: provider.baseUrl, apiKey: provider.apiKey, model: provider.model }
 
-        const req = adapter.buildGenerateRequest(config, { prompt, firstFrameUrl, duration: 5 })
-        const res = await fetch(req.url, { method: req.method, headers: req.headers, body: JSON.stringify(req.body) })
+      const req = adapter.buildGenerateRequest(config, { prompt, firstFrameUrl, duration: 5 })
+      const res = await fetch(req.url, { method: req.method, headers: req.headers, body: JSON.stringify(req.body) })
 
-        if (!res.ok) {
-          const text = await res.text().catch(() => 'Unknown error')
-          throw new Error(`视频生成API错误 (${res.status}): ${text.slice(0, 300)}`)
-        }
+      if (!res.ok) {
+        const text = await res.text().catch(() => 'Unknown error')
+        throw new Error(`视频生成API错误 (${res.status}): ${text.slice(0, 300)}`)
+      }
 
-        const result = await res.json()
-        const parsed = adapter.parseGenerateResponse(result)
+      const result = await res.json()
+      const parsed = adapter.parseGenerateResponse(result)
 
-        if (parsed.videoUrl) {
-          videoUrl = parsed.videoUrl
-        } else if (parsed.isAsync && parsed.taskId) {
-          videoUrl = await this._pollVideoTask(adapter, config, parsed.taskId)
-        }
+      if (parsed.videoUrl) {
+        videoUrl = parsed.videoUrl
+      } else if (parsed.isAsync && parsed.taskId) {
+        videoUrl = await this._pollVideoTask(adapter, config, parsed.taskId)
       }
 
       await db.storyboard.update({
@@ -965,53 +901,6 @@ export const aiClient = {
     throw new Error('视频生成超时')
   },
 
-  async _generateVideoZai(prompt: string, firstFrameUrl?: string): Promise<string> {
-    const ZAI = (await import('z-ai-web-dev-sdk')).default
-    const client = await ZAI.create()
-
-    const videoRequestBody: Record<string, unknown> = {
-      prompt,
-      quality: 'speed',
-      with_audio: false,
-      size: '1344x768',
-      fps: 30,
-      duration: 5,
-    }
-    if (firstFrameUrl) {
-      videoRequestBody.image_url = firstFrameUrl
-    }
-
-    const task = await client.video.generations.create(
-      videoRequestBody as import('z-ai-web-dev-sdk').CreateVideoGenerationBody
-    )
-
-    const maxPolls = 60
-    const pollInterval = 5000
-    let result = await client.async.result.query(task.id)
-    let pollCount = 0
-
-    while (result.task_status === 'PROCESSING' && pollCount < maxPolls) {
-      pollCount++
-      await new Promise((resolve) => setTimeout(resolve, pollInterval))
-      result = await client.async.result.query(task.id)
-    }
-
-    if (result.task_status === 'SUCCESS') {
-      const url =
-        result.video_result?.[0]?.url ||
-        result.video_url ||
-        result.url ||
-        result.video ||
-        ''
-      if (!url) throw new Error('Video generation succeeded but no URL was returned')
-      return String(url)
-    } else {
-      throw new Error(
-        `Video generation ${result.task_status === 'FAIL' ? 'failed' : 'timed out'}`
-      )
-    }
-  },
-
   // ---- TTS Generation ----
 
   async generateTts(
@@ -1033,41 +922,37 @@ export const aiClient = {
     try {
       let audioDataUrl = ''
 
-      if (provider.provider === 'z-ai-sdk') {
-        audioDataUrl = await this._generateTtsZai(text, voiceId)
-      } else {
-        // All other providers use the adapter pattern
-        const { getTTSAdapter } = await import('@/lib/adapters/tts')
-        const adapter = getTTSAdapter(provider.provider)
-        const config = { baseUrl: provider.baseUrl, apiKey: provider.apiKey, model: provider.model }
+      // All providers use the adapter pattern
+      const { getTTSAdapter } = await import('@/lib/adapters/tts')
+      const adapter = getTTSAdapter(provider.provider)
+      const config = { baseUrl: provider.baseUrl, apiKey: provider.apiKey, model: provider.model }
 
-        const req = adapter.buildGenerateRequest(config, { text, voiceId, speed: 1.0 })
-        const res = await fetch(req.url, { method: req.method, headers: req.headers, body: JSON.stringify(req.body) })
+      const req = adapter.buildGenerateRequest(config, { text, voiceId, speed: 1.0 })
+      const res = await fetch(req.url, { method: req.method, headers: req.headers, body: JSON.stringify(req.body) })
 
-        if (!res.ok) {
-          const text = await res.text().catch(() => 'Unknown error')
-          throw new Error(`TTS API错误 (${res.status}): ${text.slice(0, 300)}`)
-        }
+      if (!res.ok) {
+        const text = await res.text().catch(() => 'Unknown error')
+        throw new Error(`TTS API错误 (${res.status}): ${text.slice(0, 300)}`)
+      }
 
-        // Try JSON first, then binary
-        const contentType = res.headers.get('content-type') || ''
-        if (contentType.includes('application/json')) {
-          const jsonResult = await res.json()
-          const parsed = adapter.parseResponse(jsonResult)
-          if (parsed.audioHex) {
-            // MiniMax returns hex-encoded audio
-            const buffer = Buffer.from(parsed.audioHex, 'hex')
-            const base64 = buffer.toString('base64')
-            audioDataUrl = `data:audio/${parsed.format || 'mp3'};base64,${base64}`
-          } else if (parsed.audioBase64) {
-            audioDataUrl = `data:audio/${parsed.format || 'wav'};base64,${parsed.audioBase64}`
-          }
-        } else {
-          // Binary audio response (OpenAI, etc.)
-          const buffer = Buffer.from(await res.arrayBuffer())
+      // Try JSON first, then binary
+      const contentType = res.headers.get('content-type') || ''
+      if (contentType.includes('application/json')) {
+        const jsonResult = await res.json()
+        const parsed = adapter.parseResponse(jsonResult)
+        if (parsed.audioHex) {
+          // MiniMax/Chatfire returns hex-encoded audio
+          const buffer = Buffer.from(parsed.audioHex, 'hex')
           const base64 = buffer.toString('base64')
-          audioDataUrl = `data:audio/wav;base64,${base64}`
+          audioDataUrl = `data:audio/${parsed.format || 'mp3'};base64,${base64}`
+        } else if (parsed.audioBase64) {
+          audioDataUrl = `data:audio/${parsed.format || 'wav'};base64,${parsed.audioBase64}`
         }
+      } else {
+        // Binary audio response (OpenAI, etc.)
+        const buffer = Buffer.from(await res.arrayBuffer())
+        const base64 = buffer.toString('base64')
+        audioDataUrl = `data:audio/wav;base64,${base64}`
       }
 
       await db.storyboard.update({
@@ -1081,113 +966,6 @@ export const aiClient = {
       })
       throw error
     }
-  },
-
-  async _generateTtsZai(text: string, voiceId?: string): Promise<string> {
-    try {
-      const ZAI = (await import('z-ai-web-dev-sdk')).default
-      const client = await ZAI.create()
-
-      // z-ai-sdk TTS: response_format must be 'wav' for non-stream, 'pcm' for stream
-      const response = await client.audio.tts.create({
-        input: text,
-        voice: voiceId || 'tongtong',
-        speed: 1.0,
-        response_format: 'wav',
-        stream: false,
-      })
-
-      // The SDK returns a standard Response object
-      if (!response || !response.body) {
-        throw new Error('z-ai-web-dev-sdk TTS 返回空响应')
-      }
-
-      const arrayBuffer = await response.arrayBuffer()
-      const buffer = Buffer.from(new Uint8Array(arrayBuffer))
-      if (buffer.length === 0) {
-        throw new Error('z-ai-web-dev-sdk TTS 返回空音频数据')
-      }
-      const base64Audio = buffer.toString('base64')
-      return `data:audio/wav;base64,${base64Audio}`
-    } catch (sdkError) {
-      const msg = sdkError instanceof Error ? sdkError.message : String(sdkError)
-      if (msg.includes('Configuration file not found') || msg.includes('.z-ai-config')) {
-        throw new Error(
-          'Z-AI SDK TTS 仅在本地开发环境可用。' +
-          '请在设置中配置其他语音合成供应商（如 OpenAI TTS）。'
-        )
-      }
-      throw sdkError
-    }
-  },
-
-  async _generateTtsOpenAI(
-    text: string,
-    voiceId: string | undefined,
-    provider: ProviderConfig,
-    voiceStyle?: string
-  ): Promise<string> {
-    const url = `${provider.baseUrl.replace(/\/$/, '')}/audio/speech`
-
-    const body: Record<string, unknown> = {
-      model: provider.model || 'tts-1',
-      input: text,
-      voice: voiceId || 'alloy',
-      response_format: 'wav',
-    }
-
-    // For gpt-4o-mini-tts model, add instructions parameter for voice style/personality
-    if (provider.model === 'gpt-4o-mini-tts' && voiceStyle) {
-      body.instructions = voiceStyle
-    }
-
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${provider.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    })
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => '')
-      throw new Error(`OpenAI TTS API error (${res.status}): ${text.slice(0, 300)}`)
-    }
-
-    const buffer = Buffer.from(await res.arrayBuffer())
-    const base64Audio = buffer.toString('base64')
-    return `data:audio/wav;base64,${base64Audio}`
-  },
-
-  async _generateTtsFishAudio(
-    text: string,
-    voiceId: string | undefined,
-    provider: ProviderConfig
-  ): Promise<string> {
-    const url = `${provider.baseUrl.replace(/\/$/, '')}/tts`
-
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${provider.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        text,
-        reference_id: voiceId || '',
-        format: 'wav',
-      }),
-    })
-
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '')
-      throw new Error(`Fish Audio TTS API error (${res.status}): ${errText.slice(0, 300)}`)
-    }
-
-    const buffer = Buffer.from(await res.arrayBuffer())
-    const base64Audio = buffer.toString('base64')
-    return `data:audio/wav;base64,${base64Audio}`
   },
 
   // ---- Connection Test ----
@@ -1234,9 +1012,28 @@ export const aiClient = {
       }
 
       if (category === 'tts') {
-        // Test TTS with a short phrase
-        const audioDataUrl = await this._generateTtsOpenAI('你好', 'alloy', provider)
-        const preview = audioDataUrl ? `语音合成成功，数据大小: ${(audioDataUrl.length / 1024).toFixed(1)}KB` : '语音合成返回空'
+        // Use adapter pattern for TTS test
+        const { getTTSAdapter } = await import('@/lib/adapters/tts')
+        const adapter = getTTSAdapter(provider.provider)
+        const config = { baseUrl: provider.baseUrl, apiKey: provider.apiKey, model: provider.model }
+        const req = adapter.buildGenerateRequest(config, { text: '你好', voiceId: undefined, speed: 1.0 })
+        const res = await fetch(req.url, { method: req.method, headers: req.headers, body: JSON.stringify(req.body) })
+        if (!res.ok) {
+          const text = await res.text().catch(() => '')
+          throw new Error(`TTS API error (${res.status}): ${text.slice(0, 200)}`)
+        }
+        const contentType = res.headers.get('content-type') || ''
+        let preview = ''
+        if (contentType.includes('application/json')) {
+          const jsonResult = await res.json()
+          const parsed = adapter.parseResponse(jsonResult)
+          preview = parsed.audioBase64
+            ? `语音合成成功，格式: ${parsed.format}`
+            : '语音合成返回数据为空'
+        } else {
+          const buffer = Buffer.from(await res.arrayBuffer())
+          preview = `语音合成成功，数据大小: ${(buffer.length / 1024).toFixed(1)}KB`
+        }
         return {
           success: true,
           provider: provider.name,

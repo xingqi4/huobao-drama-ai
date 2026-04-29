@@ -3,6 +3,8 @@ import type {
   TTSProviderAdapter,
 } from './types'
 
+import { joinProviderUrl } from './url'
+
 // ============================================================================
 // MiniMax TTS Adapter
 // ============================================================================
@@ -17,7 +19,7 @@ export class MiniMaxTTSAdapter implements TTSProviderAdapter {
     const speed = params.speed ?? 1
 
     return {
-      url: `${config.baseUrl}/v1/t2a_v2`,
+      url: joinProviderUrl(config.baseUrl, '/v1', '/t2a_v2'),
       method: 'POST',
       headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
       body: {
@@ -81,7 +83,78 @@ export class MiniMaxTTSAdapter implements TTSProviderAdapter {
 }
 
 // ============================================================================
-// OpenAI TTS Adapter (compatible with OpenAI, Fish Audio, z-ai-sdk)
+// Chatfire TTS Adapter (MiniMax-compatible gateway)
+// ============================================================================
+
+export class ChatfireTTSAdapter implements TTSProviderAdapter {
+  buildGenerateRequest(
+    config: { baseUrl: string; apiKey: string; model: string },
+    params: { text: string; voiceId?: string; speed?: number }
+  ): ProviderRequest {
+    const model = config.model || 'speech-2.8-hd'
+    const voiceId = params.voiceId || 'male-qn-qingse'
+    const speed = params.speed ?? 1
+
+    return {
+      url: joinProviderUrl(config.baseUrl, '/v1', '/t2a_v2'),
+      method: 'POST',
+      headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
+      body: {
+        model,
+        text: params.text,
+        stream: false,
+        voice_setting: {
+          voice_id: voiceId,
+          speed,
+          vol: 1,
+          pitch: 0,
+        },
+        audio_setting: {
+          sample_rate: 32000,
+          bitrate: 128000,
+          format: 'mp3',
+          channel: 1,
+        },
+        subtitle_enable: false,
+      },
+    }
+  }
+
+  parseResponse(result: unknown): {
+    audioBase64?: string
+    audioHex?: string
+    format: string
+    sampleRate?: number
+  } {
+    // Same parsing logic as MiniMax — Chatfire wraps MiniMax's TTS API
+    const resp = result as Record<string, unknown>
+
+    const baseResp = resp.base_resp as Record<string, unknown> | undefined
+    if (baseResp && (baseResp.status_code as number) !== 0) {
+      return { format: 'mp3' }
+    }
+
+    const data = resp.data as Record<string, unknown> | undefined
+    if (!data) {
+      return { format: 'mp3' }
+    }
+
+    const audioHex = data.audio as string | undefined
+    const extraInfo = data.extra_info as Record<string, unknown> | undefined
+
+    const audioBase64 = audioHex ? hexToBase64(audioHex) : undefined
+
+    return {
+      audioBase64,
+      audioHex,
+      format: (extraInfo?.audio_format as string) || 'mp3',
+      sampleRate: extraInfo?.audio_sample_rate as number | undefined,
+    }
+  }
+}
+
+// ============================================================================
+// OpenAI TTS Adapter (compatible with OpenAI, Fish Audio)
 // ============================================================================
 
 export class OpenAITTSAdapter implements TTSProviderAdapter {
@@ -93,7 +166,7 @@ export class OpenAITTSAdapter implements TTSProviderAdapter {
     const voice = params.voiceId || 'alloy'
 
     return {
-      url: `${config.baseUrl}/v1/audio/speech`,
+      url: joinProviderUrl(config.baseUrl, '/v1', '/audio/speech'),
       method: 'POST',
       headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
       body: {
@@ -154,9 +227,9 @@ export class OpenAITTSAdapter implements TTSProviderAdapter {
 
 export const ttsAdapters: Record<string, TTSProviderAdapter> = {
   minimax: new MiniMaxTTSAdapter(),
+  chatfire: new ChatfireTTSAdapter(), // MiniMax-compatible gateway
   openai: new OpenAITTSAdapter(),
   fish_audio: new OpenAITTSAdapter(), // OpenAI-compatible
-  z_ai_sdk: new OpenAITTSAdapter(), // fallback
 }
 
 export function getTTSAdapter(provider: string): TTSProviderAdapter {

@@ -216,6 +216,34 @@ export const api = {
       }),
   },
 
+  // ---- Character Appearances ----
+  appearances: {
+    list: (characterId: string) =>
+      request<{ appearances: any[] }>(`/api/characters/${characterId}/appearances`).then(r => r.appearances),
+
+    create: (characterId: string, data: { label?: string; description?: string; imagePrompt?: string; generateImage?: boolean }) =>
+      request<any>(`/api/characters/${characterId}/appearances`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    get: (characterId: string, appearanceId: string) =>
+      request<any>(`/api/characters/${characterId}/appearances/${appearanceId}`),
+
+    update: (characterId: string, appearanceId: string, data: { label?: string; selectedIndex?: number; imageUrl?: string }) =>
+      request<any>(`/api/characters/${characterId}/appearances/${appearanceId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    delete: (characterId: string, appearanceId: string) =>
+      fetch(`/api/characters/${characterId}/appearances/${appearanceId}`, { method: 'DELETE' }).then(r => {
+        if (!r.ok) throw new Error(`Delete appearance failed: ${r.status}`)
+      }),
+  },
+
   // ---- Scenes ----
   scenes: {
     list: (dramaId: string) =>
@@ -228,6 +256,31 @@ export const api = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
+      }),
+  },
+
+  // ---- Scene Images ----
+  sceneImages: {
+    list: (sceneId: string) =>
+      request<{ images: any[] }>(`/api/scenes/${sceneId}/images`).then(r => r.images),
+
+    create: (sceneId: string, data: { timeOfDay?: string; angle?: string; description?: string; generateImage?: boolean }) =>
+      request<any>(`/api/scenes/${sceneId}/images`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    update: (sceneId: string, imageId: string, data: { isSelected?: boolean; description?: string }) =>
+      request<any>(`/api/scenes/${sceneId}/images/${imageId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    delete: (sceneId: string, imageId: string) =>
+      fetch(`/api/scenes/${sceneId}/images/${imageId}`, { method: 'DELETE' }).then(r => {
+        if (!r.ok) throw new Error(`Delete scene image failed: ${r.status}`)
       }),
   },
 
@@ -282,11 +335,18 @@ export const api = {
         }
       ),
 
-    generateImage: (prompt: string, size?: string) =>
+    generateCharacterSheet: (characterId: string, style?: string, referenceImages?: string[]) =>
+      request<{ sheet: any; portrait: any }>('/api/ai/generate-character-sheet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ characterId, style, referenceImages }),
+      }),
+
+    generateImage: (prompt: string, size?: string, episodeId?: string, dialogueChar?: string, sceneLocation?: string) =>
       request<{ imageUrl: string; prompt: string }>('/api/ai/generate-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, size }),
+        body: JSON.stringify({ prompt, size, episodeId, dialogueChar, sceneLocation }),
       }),
 
     generateCharacterImage: (characterId: string, style?: string) =>

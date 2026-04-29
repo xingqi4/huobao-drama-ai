@@ -6,6 +6,8 @@
 
 import type { ImageProviderAdapter, ProviderRequest } from './types'
 
+import { joinProviderUrl } from './url'
+
 // ============================================================
 // Helper: GCD for aspect ratio calculation (Gemini)
 // ============================================================
@@ -59,8 +61,7 @@ export class OpenAIImageAdapter implements ImageProviderAdapter {
     config: { baseUrl: string; apiKey: string; model: string },
     params: { prompt: string; size?: string; negativePrompt?: string; referenceImages?: string[] }
   ): ProviderRequest {
-    const base = config.baseUrl.replace(/\/$/, '')
-    const url = `${base}/v1/images/generations`
+    const url = joinProviderUrl(config.baseUrl, '/v1', '/images/generations')
 
     const body: Record<string, unknown> = {
       model: config.model,
@@ -109,9 +110,8 @@ export class OpenAIImageAdapter implements ImageProviderAdapter {
     config: { baseUrl: string; apiKey: string; model: string },
     taskId: string
   ): ProviderRequest | null {
-    const base = config.baseUrl.replace(/\/$/, '')
     return {
-      url: `${base}/v1/images/task/${taskId}`,
+      url: joinProviderUrl(config.baseUrl, '/v1', `/images/task/${taskId}`),
       method: 'GET',
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
@@ -239,8 +239,7 @@ export class MiniMaxImageAdapter implements ImageProviderAdapter {
     config: { baseUrl: string; apiKey: string; model: string },
     params: { prompt: string; size?: string; negativePrompt?: string; referenceImages?: string[] }
   ): ProviderRequest {
-    const base = config.baseUrl.replace(/\/$/, '')
-    const url = `${base}/v1/image_generation`
+    const url = joinProviderUrl(config.baseUrl, '/v1', '/image_generation')
 
     const model = config.model || 'MiniMax-Image-01'
 
@@ -303,9 +302,8 @@ export class MiniMaxImageAdapter implements ImageProviderAdapter {
     config: { baseUrl: string; apiKey: string; model: string },
     taskId: string
   ): ProviderRequest | null {
-    const base = config.baseUrl.replace(/\/$/, '')
     return {
-      url: `${base}/v1/image_generation/task/${taskId}`,
+      url: joinProviderUrl(config.baseUrl, '/v1', `/image_generation/task/${taskId}`),
       method: 'GET',
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
@@ -345,8 +343,7 @@ export class VolcEngineImageAdapter implements ImageProviderAdapter {
     config: { baseUrl: string; apiKey: string; model: string },
     params: { prompt: string; size?: string; negativePrompt?: string; referenceImages?: string[] }
   ): ProviderRequest {
-    const base = config.baseUrl.replace(/\/$/, '')
-    const url = `${base}/api/v3/images/generations`
+    const url = joinProviderUrl(config.baseUrl, '/api/v3', '/images/generations')
 
     const model = config.model || 'doubao-seedream-5-0-lite'
     const { width, height } = parseSize(params.size)
@@ -397,9 +394,8 @@ export class VolcEngineImageAdapter implements ImageProviderAdapter {
     config: { baseUrl: string; apiKey: string; model: string },
     taskId: string
   ): ProviderRequest | null {
-    const base = config.baseUrl.replace(/\/$/, '')
     return {
-      url: `${base}/api/v3/images/generations/${taskId}`,
+      url: joinProviderUrl(config.baseUrl, '/api/v3', `/images/generations/${taskId}`),
       method: 'GET',
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
@@ -438,8 +434,8 @@ export class AliImageAdapter implements ImageProviderAdapter {
     config: { baseUrl: string; apiKey: string; model: string },
     params: { prompt: string; size?: string; negativePrompt?: string; referenceImages?: string[] }
   ): ProviderRequest {
-    const base = (config.baseUrl || 'https://dashscope.aliyuncs.com').replace(/\/$/, '')
-    const url = `${base}/api/v1/services/aigc/image-generation/generation`
+    const base = config.baseUrl || 'https://dashscope.aliyuncs.com'
+    const url = joinProviderUrl(base, '/api/v1', '/services/aigc/image-generation/generation')
 
     const model = config.model || 'wan2.6-t2i'
 
@@ -516,9 +512,9 @@ export class AliImageAdapter implements ImageProviderAdapter {
     config: { baseUrl: string; apiKey: string; model: string },
     taskId: string
   ): ProviderRequest | null {
-    const base = (config.baseUrl || 'https://dashscope.aliyuncs.com').replace(/\/$/, '')
+    const base = config.baseUrl || 'https://dashscope.aliyuncs.com'
     return {
-      url: `${base}/api/v1/tasks/${taskId}`,
+      url: joinProviderUrl(base, '/api/v1', `/tasks/${taskId}`),
       method: 'GET',
       headers: {
         Authorization: `Bearer ${config.apiKey}`,

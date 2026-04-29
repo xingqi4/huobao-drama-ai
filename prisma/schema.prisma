@@ -65,7 +65,8 @@ model Character {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  drama Drama @relation(fields: [dramaId], references: [id], onDelete: Cascade)
+  drama       Drama                @relation(fields: [dramaId], references: [id], onDelete: Cascade)
+  appearances CharacterAppearance[]
 }
 
 // ============ Scene ============
@@ -80,7 +81,8 @@ model Scene {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  drama Drama @relation(fields: [dramaId], references: [id], onDelete: Cascade)
+  drama  Drama       @relation(fields: [dramaId], references: [id], onDelete: Cascade)
+  images SceneImage[]
 }
 
 // ============ Storyboard (Shot) ============
@@ -108,6 +110,62 @@ model Storyboard {
   updatedAt      DateTime @updatedAt
 
   episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+}
+
+// ============ Character Appearance ============
+model CharacterAppearance {
+  id               String   @id @default(cuid())
+  characterId      String
+  appearanceIndex  Int      @default(0)  // 0 = primary/主形象, 1+ = sub-appearances
+  label            String   @default("")  // e.g., "主形象", "夜晚形态", "战斗形态"
+  description      String   @default("")  // Text description extracted by AI Vision
+  imagePrompt      String   @default("")  // The prompt used for generation
+  imageUrl         String?               // Currently selected image (data URL or path)
+  imageUrls        String   @default("[]") // JSON array of all generated images
+  selectedIndex    Int      @default(0)   // Which image in imageUrls is selected
+  previousImageUrl String?              // For undo/rollback
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@unique([characterId, appearanceIndex])
+}
+
+// ============ Scene Image ============
+model SceneImage {
+  id          String   @id @default(cuid())
+  sceneId     String
+  description String   @default("")  // Text prompt used for generation
+  imageUrl    String?               // Generated image (data URL or path)
+  timeOfDay   String   @default("")  // "day", "night", "dusk", etc.
+  angle       String   @default("")  // "wide", "medium", "close-up"
+  isSelected  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  scene Scene @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+}
+
+// ============ Image Generation ============
+model ImageGeneration {
+  id              String   @id @default(cuid())
+  storyboardId    String?
+  characterId     String?
+  sceneId         String?
+  dramaId         String?
+  prompt          String
+  model           String   @default("")
+  provider        String   @default("")
+  size            String   @default("1024x1024")
+  frameType       String?  // "first_frame", "last_frame", "character_portrait", "scene_establishing", "storyboard_frame"
+  referenceImages String?  // JSON array of reference image URLs used
+  taskId          String?  // Async task ID for polling
+  imageUrl        String?  // Final image URL
+  status          String   @default("pending")  // pending, processing, completed, failed
+  errorMsg        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 // ============ AI Provider Configuration ============

@@ -452,6 +452,21 @@ export function EpisodeWorkspace() {
     }
   }
 
+  // ── AI: Generate character sheet (三视图) ──────────────────
+
+  const handleGenerateCharSheet = async (characterId: string) => {
+    setGeneratingCharImg(characterId)
+    try {
+      await api.ai.generateCharacterSheet(characterId)
+      toast({ title: '角色设定图已生成' })
+      await fetchEpisode()
+    } catch (err) {
+      toast({ title: '角色设定图生成失败', description: String(err), variant: 'destructive' })
+    } finally {
+      setGeneratingCharImg(null)
+    }
+  }
+
   // ── AI: Generate shot image ────────────────────────────────
 
   const handleGenerateShotImage = async (storyboard: Storyboard) => {
@@ -461,7 +476,12 @@ export function EpisodeWorkspace() {
     }
     setGeneratingShotImg(storyboard.id)
     try {
-      const result = await api.ai.generateImage(storyboard.imagePrompt, '1024x576')
+      const result = await api.ai.generateImage(
+        storyboard.imagePrompt,
+        '1024x576',
+        selectedEpisodeId || undefined,
+        storyboard.dialogueChar || undefined,
+      )
       await api.storyboards.update(storyboard.id, { firstFrameUrl: result.imageUrl })
       toast({ title: `镜头 ${storyboard.shotNumber} 图片已生成` })
       await fetchEpisode()
@@ -487,7 +507,12 @@ export function EpisodeWorkspace() {
       setGeneratingShotImg(sb.id)
       setBatchProgress({ current: i + 1, total: pending.length, message: `生成图片 ${i + 1}/${pending.length}...` })
       try {
-        const result = await api.ai.generateImage(sb.imagePrompt!, '1024x576')
+        const result = await api.ai.generateImage(
+          sb.imagePrompt!,
+          '1024x576',
+          selectedEpisodeId || undefined,
+          sb.dialogueChar || undefined,
+        )
         await api.storyboards.update(sb.id, { firstFrameUrl: result.imageUrl })
         successCount++
       } catch {
@@ -1288,17 +1313,17 @@ export function EpisodeWorkspace() {
                 {characters.map((char) => (
                   <Card key={char.id} className="border-border/50 py-0 gap-0">
                     <CardContent className="p-4">
-                      <div className="flex gap-3">
+                      <div className="flex items-start gap-3">
                         {/* Avatar */}
                         <div className="flex-shrink-0">
                           {char.imageUrl ? (
                             <img
                               src={char.imageUrl}
                               alt={char.name}
-                              className="size-16 rounded-lg object-cover border border-border/50"
+                              className="w-16 h-16 rounded-lg object-cover border border-border/50"
                             />
                           ) : (
-                            <div className="size-16 rounded-lg bg-muted flex items-center justify-center">
+                            <div className="w-16 h-16 rounded-lg bg-muted flex items-center justify-center">
                               <UserCircle className="size-8 text-muted-foreground/50" />
                             </div>
                           )}
@@ -1310,9 +1335,9 @@ export function EpisodeWorkspace() {
                             <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
                               {char.role === 'protagonist' ? '主角' : char.role === 'antagonist' ? '反派' : char.role === 'supporting' ? '配角' : char.role}
                             </Badge>
-                            {char.gender && (
-                              <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                                {char.gender}
+                            {char.imageUrl && (
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-emerald-600 border-emerald-200">
+                                <Layers className="size-2.5 mr-0.5" />设定图
                               </Badge>
                             )}
                           </div>
@@ -1322,33 +1347,32 @@ export function EpisodeWorkspace() {
                           <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                             <Button
                               size="sm"
-                              variant="ghost"
-                              className="h-7 text-xs text-primary hover:text-primary"
+                              variant="outline"
+                              className="h-7 text-xs"
+                              onClick={() => handleGenerateCharSheet(char.id)}
+                              disabled={generatingCharImg === char.id}
+                            >
+                              {generatingCharImg === char.id ? (
+                                <Loader2 className="size-3.5 animate-spin" />
+                              ) : (
+                                <Layers className="size-3.5" />
+                              )}
+                              生成设定图
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs"
                               onClick={() => handleGenerateCharImage(char.id)}
                               disabled={generatingCharImg === char.id}
                             >
                               {generatingCharImg === char.id ? (
-                                <Loader2 className="size-3 animate-spin" />
+                                <Loader2 className="size-3.5 animate-spin" />
                               ) : (
-                                <Camera className="size-3" />
+                                <ImageIcon className="size-3.5" />
                               )}
                               {char.imageUrl ? '重新生成头像' : '生成头像'}
                             </Button>
-                            {char.appearance && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 text-xs text-muted-foreground hover:text-foreground"
-                                onClick={() => handleCopy(char.appearance!, `char-appearance-${char.id}`)}
-                              >
-                                {copiedField === `char-appearance-${char.id}` ? (
-                                  <Check className="size-3 text-emerald-500" />
-                                ) : (
-                                  <Copy className="size-3" />
-                                )}
-                                复制外貌描述
-                              </Button>
-                            )}
                             <Button
                               size="sm"
                               variant="ghost"
@@ -1364,7 +1388,7 @@ export function EpisodeWorkspace() {
                               ) : (
                                 <Upload className="size-3" />
                               )}
-                              本地上传头像
+                              上传
                             </Button>
                             <input
                               id={`upload-char-${char.id}`}
@@ -1405,10 +1429,10 @@ export function EpisodeWorkspace() {
                           <img
                             src={scene.imageUrl}
                             alt={scene.location}
-                            className="size-16 rounded-lg object-cover border border-border/50 flex-shrink-0"
+                            className="w-16 h-16 rounded-lg object-cover border border-border/50 flex-shrink-0"
                           />
                         ) : (
-                          <div className="size-16 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
+                          <div className="w-16 h-16 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
                             <MapPin className="size-6 text-muted-foreground/50" />
                           </div>
                         )}
@@ -1421,6 +1445,11 @@ export function EpisodeWorkspace() {
                                 {scene.timeOfDay}
                               </Badge>
                             )}
+                            {scene.imageUrl && (
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-emerald-600 border-emerald-200">
+                                <ImageIcon className="size-2.5 mr-0.5" />参考图
+                              </Badge>
+                            )}
                           </div>
                           {scene.description && (
                             <p className="text-xs text-muted-foreground line-clamp-2">{scene.description}</p>
@@ -1428,33 +1457,18 @@ export function EpisodeWorkspace() {
                           <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                             <Button
                               size="sm"
-                              variant="ghost"
-                              className="h-7 text-xs text-primary hover:text-primary"
+                              variant="outline"
+                              className="h-7 text-xs"
                               onClick={() => handleGenerateSceneImage(scene.id)}
                               disabled={generatingSceneImg === scene.id}
                             >
                               {generatingSceneImg === scene.id ? (
-                                <Loader2 className="size-3 animate-spin" />
+                                <Loader2 className="size-3.5 animate-spin" />
                               ) : (
-                                <Camera className="size-3" />
+                                <ImageIcon className="size-3.5" />
                               )}
                               {scene.imageUrl ? '重新生成场景图' : '生成场景图'}
                             </Button>
-                            {scene.prompt && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 text-xs text-muted-foreground hover:text-foreground"
-                                onClick={() => handleCopy(scene.prompt, `scene-prompt-${scene.id}`)}
-                              >
-                                {copiedField === `scene-prompt-${scene.id}` ? (
-                                  <Check className="size-3 text-emerald-500" />
-                                ) : (
-                                  <Copy className="size-3" />
-                                )}
-                                复制场景提示词
-                              </Button>
-                            )}
                             <Button
                               size="sm"
                               variant="ghost"
@@ -1470,7 +1484,7 @@ export function EpisodeWorkspace() {
                               ) : (
                                 <Upload className="size-3" />
                               )}
-                              上传场景图
+                              上传
                             </Button>
                             <input
                               id={`upload-scene-${scene.id}`}
