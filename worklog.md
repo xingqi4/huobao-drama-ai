@@ -214,3 +214,31 @@ Stage Summary:
 - 场景卡片新增"参考图"状态Badge，按钮样式统一为outline
 - 镜头图片生成已接入参考图注入（episodeId + dialogueChar），自动收集角色/场景参考图
 - UI更简洁：移除低频复制按钮，上传按钮文字精简
+
+---
+Task ID: 5
+Agent: Main
+Task: 修复Prisma Schema兼容性 - PostgreSQL线上 + SQLite本地双模式
+
+Work Log:
+- 对比远程线上 schema (commit 25ccf21) 和本地 schema：
+  - 线上：provider = "postgresql", directUrl, relationMode = "prisma"
+  - 本地：provider = "sqlite"（之前为本地开发手动改的）
+  - 问题：本地 sqlite 版本推送到 GitHub 导致 Vercel 构建失败
+- 修复 schema：恢复 postgresql provider + directUrl + relationMode
+- 保留所有原有 7 个模型的字段完整不变（Drama/Episode/Character/Scene/Storyboard/AiProvider/AgentConfig）
+- 新增 3 个模型完整保留：CharacterAppearance/SceneImage/ImageGeneration
+- Character 模型新增 `appearances CharacterAppearance[]` 关联（仅增加，未删除任何字段）
+- Scene 模型新增 `images SceneImage[]` 关联（仅增加，未删除任何字段）
+- 创建 `scripts/pre-dev.js`：本地开发自动切换 SQLite，生成客户端，推送 schema
+- 更新 `scripts/build.js`：构建时确保 PostgreSQL schema + 增量推送（去掉 --accept-data-loss，保护线上数据）
+- 更新 `package.json`：dev 脚本集成 pre-dev 自动切换
+- .gitignore 添加 prisma/.sqlite-mode marker
+- 合并远程分支冲突（保留本地所有新增修改 + 远程 .env.example/README.md）
+- 推送到 GitHub 成功
+
+Stage Summary:
+- Schema 双模式机制：GitHub 上是 PostgreSQL（Vercel 构建），本地 pre-dev 自动切换 SQLite
+- 线上原有 7 个模型和数据完全保留，3 个新模型增量添加
+- build.js 去掉 --accept-data-loss 标志，保护线上已有数据
+- 代码已推送到 GitHub (commit 3422cc1)，Vercel 应自动触发重新部署
