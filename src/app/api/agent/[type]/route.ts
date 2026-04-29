@@ -6,6 +6,7 @@
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAuth } from '@/lib/auth-helpers'
 import {
   AgentType,
   ALL_AGENT_TYPES,
@@ -95,6 +96,10 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ type: string }> }
 ) {
+  // Auth check — only logged in users can update agent config
+  const auth = await requireAuth()
+  if (auth.error) return auth.error
+
   const { type } = await params
 
   if (!isValidAgentType(type)) {
@@ -189,6 +194,10 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ type: string }> }
 ) {
+  // Auth check for agent execution
+  const auth = await requireAuth()
+  if (auth.error) return auth.error
+
   const { type } = await params
 
   if (!isValidAgentType(type)) {

@@ -5,6 +5,7 @@
 // ============================================================
 
 import { NextRequest } from 'next/server'
+import { requireAuth } from '@/lib/auth-helpers'
 import { AgentType, ALL_AGENT_TYPES, AGENT_NAMES } from '@/lib/agents/types'
 import { executeAgent, AgentProgressEvent } from '@/lib/agents/factory'
 
@@ -24,6 +25,13 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ type: string }> }
 ) {
+  // Auth check for agent execution
+  const auth = await requireAuth()
+  if (auth.error) return new Response(
+    JSON.stringify({ error: '未登录' }),
+    { status: 401, headers: { 'Content-Type': 'application/json' } }
+  )
+
   const { type } = await params
 
   if (!isValidAgentType(type)) {

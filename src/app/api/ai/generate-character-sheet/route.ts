@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { aiClient } from '@/lib/ai-config'
+import { requireAuth } from '@/lib/auth-helpers'
 
 // POST /api/ai/generate-character-sheet - Generate character sheet (三视图)
 // This is the KEY mechanism for consistency — a reference image showing the character
 // from front, side, and back views.
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireAuth()
+    if (auth.error) return auth.error
     const { characterId, style, referenceImages } = await request.json() as {
       characterId: string
       style?: string

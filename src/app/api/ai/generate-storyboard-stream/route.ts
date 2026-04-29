@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { aiClient, AI_SYSTEM_PROMPTS } from '@/lib/ai-config'
+import { requireAuth } from '@/lib/auth-helpers'
 
 interface StoryboardShot {
   shotNumber: number
@@ -19,6 +20,8 @@ interface StoryboardShot {
 
 // POST /api/ai/generate-storyboard-stream - AI Generate Storyboard with SSE progress
 export async function POST(request: NextRequest) {
+  const auth = await requireAuth()
+  if (auth.error) return auth.error
   const { episodeId } = await request.json()
 
   if (!episodeId) {

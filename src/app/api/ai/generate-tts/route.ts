@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { aiClient } from '@/lib/ai-config'
 import { db } from '@/lib/db'
+import { requireAuth } from '@/lib/auth-helpers'
 
 // POST /api/ai/generate-tts - Generate TTS audio for a storyboard shot (multi-provider)
 // Now looks up the character's voiceId and voiceStyle from the database
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireAuth()
+    if (auth.error) return auth.error
     const { storyboardId, text, voiceId, voiceStyle } = await request.json()
 
     if (!storyboardId) {

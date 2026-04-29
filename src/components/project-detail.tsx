@@ -18,6 +18,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { ArrowLeft, Plus, Film, Users, MapPin, ChevronRight, Clock, Pencil } from 'lucide-react'
+import { UserMenu } from '@/components/user-menu'
 
 // ── helpers ──────────────────────────────────────────────────
 
@@ -227,7 +228,7 @@ export function ProjectDetailView() {
       {/* Header */}
       <header className="sticky top-0 z-10 border-b border-border/50 bg-background/80 backdrop-blur-md">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4">
-          <div className="flex items-center gap-3 mb-3">
+          <div className="flex items-center justify-between gap-3 mb-3">
             <Button
               variant="ghost"
               size="sm"
@@ -237,6 +238,7 @@ export function ProjectDetailView() {
               <ArrowLeft className="size-4" />
               <span className="hidden sm:inline">返回项目列表</span>
             </Button>
+            <UserMenu />
           </div>
 
           {drama && (

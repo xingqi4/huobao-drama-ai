@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { aiClient } from '@/lib/ai-config'
 import { db } from '@/lib/db'
+import { requireAuth } from '@/lib/auth-helpers'
 
 // POST /api/ai/generate-video - Generate video for a storyboard shot (multi-provider)
 // Supports both text-to-video (no firstFrameUrl) and image-to-video (with firstFrameUrl)
@@ -34,6 +35,8 @@ function enhanceVideoPrompt(
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireAuth()
+    if (auth.error) return auth.error
     const { storyboardId, prompt, firstFrameUrl } = await request.json()
 
     if (!storyboardId) {

@@ -1,9 +1,12 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { aiClient, AI_SYSTEM_PROMPTS } from '@/lib/ai-config'
+import { requireAuth } from '@/lib/auth-helpers'
 
 // POST /api/ai/extract-stream - AI Extract Characters & Scenes with SSE progress
 export async function POST(request: NextRequest) {
+  const auth = await requireAuth()
+  if (auth.error) return auth.error
   const { episodeId, dramaId } = await request.json()
 
   if (!episodeId || !dramaId) {

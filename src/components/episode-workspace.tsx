@@ -52,6 +52,7 @@ import {
   RotateCcw,
   Info,
 } from 'lucide-react'
+import { UserMenu } from '@/components/user-menu'
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -2653,15 +2654,18 @@ export function EpisodeWorkspace() {
             )}
           </div>
 
-          {/* Mobile sidebar toggle */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="md:hidden ml-auto size-8"
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-          >
-            {sidebarOpen ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}
-          </Button>
+          <div className="ml-auto flex items-center gap-1">
+            {/* Mobile sidebar toggle */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden size-8"
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+            >
+              {sidebarOpen ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}
+            </Button>
+            <UserMenu />
+          </div>
         </div>
 
         {/* Mobile model selectors row */}

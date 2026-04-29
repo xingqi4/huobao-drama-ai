@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { aiClient } from '@/lib/ai-config'
+import { requireAuth } from '@/lib/auth-helpers'
 
 // POST /api/ai/generate-scene-image - AI Generate Scene Image
 // Generates an image from a scene's prompt and saves it to the scene record
 // Updated: supports referenceImages, creates SceneImage record
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireAuth()
+    if (auth.error) return auth.error
     const { sceneId, style, referenceImages } = await request.json() as {
       sceneId: string
       style?: string

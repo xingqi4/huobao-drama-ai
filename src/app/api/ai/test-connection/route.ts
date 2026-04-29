@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { aiClient } from '@/lib/ai-config'
 import type { AiCategory } from '@/lib/ai-config'
+import { requireAuth } from '@/lib/auth-helpers'
 
 // POST /api/ai/test-connection - Test AI provider connectivity
 // Body: { category: AiCategory, model?: string }
 // If model is provided, temporarily override the active provider's model for testing
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireAuth()
+    if (auth.error) return auth.error
     const body = await request.json().catch(() => ({}))
     const category = (body.category || 'llm') as AiCategory
     const testModel = body.model as string | undefined

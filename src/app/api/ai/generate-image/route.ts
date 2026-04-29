@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { aiClient } from '@/lib/ai-config'
+import { requireAuth } from '@/lib/auth-helpers'
 import {
   collectStoryboardReferences,
   buildEnhancedPrompt,
@@ -11,6 +12,8 @@ import {
 // Supports reference image injection for character/scene consistency
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireAuth()
+    if (auth.error) return auth.error
     const {
       prompt,
       size,

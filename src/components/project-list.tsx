@@ -36,6 +36,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Plus, Film, Users, MapPin, Clock, Trash2, Settings } from 'lucide-react'
+import { UserMenu } from '@/components/user-menu'
 
 // ── helpers ──────────────────────────────────────────────────
 
@@ -286,6 +287,7 @@ export function ProjectListView() {
               <Plus className="size-4" />
               <span className="hidden sm:inline">新建项目</span>
             </Button>
+            <UserMenu />
           </div>
         </div>
       </header>
