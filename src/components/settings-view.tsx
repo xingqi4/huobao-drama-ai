@@ -21,7 +21,6 @@ import {
   CollapsibleContent,
 } from '@/components/ui/collapsible'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { UserMenu } from '@/components/user-menu'
 import {
   ArrowLeft,
@@ -50,6 +49,7 @@ import {
   Bot,
   RotateCcw,
   Wrench,
+  Check,
 } from 'lucide-react'
 
 // ============================================================
@@ -150,9 +150,9 @@ function ModelSelector({
 
   return (
     <div className="space-y-2">
-      {/* Model grid - clickable model cards with ScrollArea for reliable scrolling */}
-      <ScrollArea className="h-[280px] w-full">
-        <div className="grid grid-cols-1 gap-1.5 pr-2">
+      {/* Model list - scrollable with native overflow + global scrollbar CSS */}
+      <div className="max-h-72 overflow-y-auto overscroll-contain">
+        <div className="flex flex-col gap-1.5 pr-1">
           {models.map((m) => {
             const isSelected = value === m.id
             return (
@@ -162,41 +162,46 @@ function ModelSelector({
                 tabIndex={disabled ? -1 : 0}
                 onClick={() => !disabled && handleModelSelect(m.id)}
                 onKeyDown={(e) => { if (!disabled && (e.key === 'Enter' || e.key === ' ')) handleModelSelect(m.id) }}
-                className={`flex items-start gap-2 px-2.5 py-2 rounded-md border text-left transition-all duration-150 ${
+                className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-left transition-all duration-150 ${
                   disabled ? 'opacity-50 cursor-not-allowed' :
                   isSelected
                     ? 'border-primary/50 bg-primary/10 ring-1 ring-primary/20 cursor-pointer'
                     : 'border-border/40 bg-muted/20 hover:bg-muted/40 hover:border-border/60 cursor-pointer'
                 }`}
               >
-                <div className="flex-1 min-w-0 overflow-hidden">
+                {/* Selection indicator */}
+                {isSelected && (
+                  <Check className="size-3 text-primary flex-shrink-0" />
+                )}
+                {/* Model info - contained within card */}
+                <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-medium truncate min-w-0">{m.name}</span>
+                    <span className="text-xs font-medium truncate">{m.name}</span>
                     {m.id === defaultModel && (
-                      <Badge className="text-[8px] px-1 py-0 h-3.5 bg-primary/10 text-primary border-primary/20 flex-shrink-0">
+                      <span className="text-[8px] px-1 py-px rounded bg-primary/10 text-primary border border-primary/20 flex-shrink-0 whitespace-nowrap">
                         默认
-                      </Badge>
+                      </span>
+                    )}
+                    {m.tags && m.tags.length > 0 && (
+                      <span className="flex gap-0.5 flex-shrink-0">
+                        {m.tags.map((tag) => (
+                          <span
+                            key={tag}
+                            className={`text-[8px] px-1 py-px rounded border whitespace-nowrap ${TAG_STYLES[tag] ?? 'bg-muted/30 text-muted-foreground border-border/30'}`}
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </span>
                     )}
                   </div>
-                  <p className="text-[9px] text-muted-foreground truncate mt-0.5">{m.id}</p>
-                  {m.tags && m.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-0.5 mt-1">
-                      {m.tags.map((tag) => (
-                        <span
-                          key={tag}
-                          className={`text-[8px] px-1 py-0 rounded border ${TAG_STYLES[tag] ?? 'bg-muted/30 text-muted-foreground border-border/30'}`}
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  )}
+                  <p className="text-[9px] text-muted-foreground truncate leading-tight mt-0.5">{m.id}</p>
                 </div>
               </div>
             )
           })}
         </div>
-      </ScrollArea>
+      </div>
 
       {/* Custom model input toggle */}
       <div className="flex items-center gap-2">
@@ -219,37 +224,29 @@ function ModelSelector({
       </div>
 
       {/* Custom model input */}
-      <AnimatePresence>
-        {showCustom && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.15 }}
-            className="overflow-hidden"
+      {showCustom && (
+        <div className="flex gap-2">
+          <Input
+            placeholder="输入模型ID，如 meta/llama-3.1-70b-instruct"
+            value={customValue}
+            onChange={(e) => setCustomValue(e.target.value)}
+            className="bg-muted/30 border-border/50 text-xs flex-1"
+            disabled={disabled}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleCustomConfirm()
+            }}
+          />
+          <Button
+            type="button"
+            size="sm"
+            onClick={handleCustomConfirm}
+            disabled={disabled}
+            className="text-[10px] h-9"
           >
-            <div className="flex gap-2">
-              <Input
-                placeholder="输入模型ID，如 meta/llama-3.1-70b-instruct"
-                value={customValue}
-                onChange={(e) => setCustomValue(e.target.value)}
-                className="bg-muted/30 border-border/50 text-xs flex-1"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleCustomConfirm()
-                }}
-              />
-              <Button
-                type="button"
-                size="sm"
-                onClick={handleCustomConfirm}
-                className="text-[10px] h-9"
-              >
-                应用
-              </Button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            应用
+          </Button>
+        </div>
+      )}
     </div>
   )
 }
@@ -276,7 +273,7 @@ function ProviderCard({
   isAdmin: boolean
 }) {
   const [expanded, setExpanded] = useState(isActive)
-  const [animComplete, setAnimComplete] = useState(false)
+  const [expandDone, setExpandDone] = useState(false)
   // Track whether the user has edited the API key since loading
   // If the key is masked (starts with ****), we need to know it hasn't been changed
   const isMaskedKey = (provider.apiKey ?? '').startsWith('****')
@@ -301,9 +298,9 @@ function ProviderCard({
     if (isActive) setExpanded(true)
   }, [isActive])
 
-  // Reset animComplete when collapsing so overflow-hidden is applied during exit animation
+  // Reset expandDone when collapsing
   useEffect(() => {
-    if (!expanded) setAnimComplete(false)
+    if (!expanded) setExpandDone(false)
   }, [expanded])
 
   // For non-admin: a masked key still counts as "configured"
@@ -422,12 +419,12 @@ function ProviderCard({
         <AnimatePresence>
           {expanded && (
             <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className={animComplete ? 'overflow-visible' : 'overflow-hidden'}
-              onAnimationComplete={() => setAnimComplete(true)}
+              initial={{ maxHeight: 0, opacity: 0 }}
+              animate={{ maxHeight: 2000, opacity: 1 }}
+              exit={{ maxHeight: 0, opacity: 0 }}
+              transition={{ duration: 0.25, ease: 'easeInOut' }}
+              className={expandDone ? '' : 'overflow-hidden'}
+              onAnimationComplete={() => setExpandDone(true)}
             >
               <div className="mt-4 pt-4 border-t border-border/30 space-y-4">
                 {/* API Key */}
