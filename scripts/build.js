@@ -90,3 +90,59 @@ if (migrationUrl) {
 }
 
 console.log('[build] Prisma setup complete, starting Next.js build...')
+
+// Step 5: Ensure admin user exists with correct role
+if (migrationUrl) {
+  try {
+    console.log('[build] Ensuring admin user exists...')
+    const bcrypt = require('bcryptjs')
+    const { PrismaClient } = require('@prisma/client')
+    const db = new PrismaClient({
+      datasources: { db: { url: migrationUrl } }
+    });
+
+    (async () => {
+      try {
+        const adminEmail = process.env.ADMIN_EMAIL || 'admin@huobao.com'
+        const adminPassword = process.env.ADMIN_PASSWORD || 'admin123'
+        const adminName = process.env.ADMIN_NAME || '管理员'
+
+        const existing = await db.user.findUnique({ where: { email: adminEmail } })
+
+        if (existing) {
+          // Force update to admin role
+          const hashedPassword = await bcrypt.hash(adminPassword, 12)
+          await db.user.update({
+            where: { id: existing.id },
+            data: {
+              role: 'admin',
+              password: hashedPassword,
+              name: adminName,
+              isActive: true,
+            },
+          })
+          console.log(`[build] Admin user ${adminEmail} updated (forced admin role)`)
+        } else {
+          // Create admin
+          const hashedPassword = await bcrypt.hash(adminPassword, 12)
+          await db.user.create({
+            data: {
+              email: adminEmail,
+              name: adminName,
+              password: hashedPassword,
+              role: 'admin',
+            },
+          })
+          console.log(`[build] Admin user ${adminEmail} created`)
+        }
+
+        await db.$disconnect()
+      } catch (err) {
+        console.warn('[build] Admin user setup warning:', err.message?.slice(0, 200))
+        try { await db.$disconnect() } catch (_) {}
+      }
+    })()
+  } catch (err) {
+    console.warn('[build] Admin user setup skipped:', err.message?.slice(0, 100))
+  }
+}

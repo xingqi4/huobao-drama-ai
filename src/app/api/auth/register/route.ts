@@ -42,6 +42,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Reserved admin emails — prevent registration with these
+    const reservedEmails = ['admin@huobao.com', 'admin@huobao.ai']
+    if (reservedEmails.includes(email.toLowerCase())) {
+      return NextResponse.json(
+        { error: '该邮箱为系统保留邮箱，不可注册' },
+        { status: 403 }
+      )
+    }
+
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12)
 
