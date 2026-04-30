@@ -21,6 +21,7 @@ import {
   CollapsibleContent,
 } from '@/components/ui/collapsible'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { UserMenu } from '@/components/user-menu'
 import {
   ArrowLeft,
@@ -149,51 +150,53 @@ function ModelSelector({
 
   return (
     <div className="space-y-2">
-      {/* Model grid - clickable model cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-64 overflow-y-auto pr-1 custom-scrollbar">
-        {models.map((m) => {
-          const isSelected = value === m.id
-          return (
-            <div
-              key={m.id}
-              role="button"
-              tabIndex={disabled ? -1 : 0}
-              onClick={() => !disabled && handleModelSelect(m.id)}
-              onKeyDown={(e) => { if (!disabled && (e.key === 'Enter' || e.key === ' ')) handleModelSelect(m.id) }}
-              className={`flex items-center gap-2 px-2.5 py-2 rounded-md border text-left transition-all duration-150 ${
-                disabled ? 'opacity-50 cursor-not-allowed' :
-                isSelected
-                  ? 'border-primary/50 bg-primary/10 ring-1 ring-primary/20 cursor-pointer'
-                  : 'border-border/40 bg-muted/20 hover:bg-muted/40 hover:border-border/60 cursor-pointer'
-              }`}
-            >
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-xs font-medium truncate">{m.name}</span>
-                  {m.id === defaultModel && (
-                    <Badge className="text-[8px] px-1 py-0 h-3.5 bg-primary/10 text-primary border-primary/20">
-                      默认
-                    </Badge>
+      {/* Model grid - clickable model cards with ScrollArea for reliable scrolling */}
+      <ScrollArea className="h-[280px] w-full">
+        <div className="grid grid-cols-1 gap-1.5 pr-2">
+          {models.map((m) => {
+            const isSelected = value === m.id
+            return (
+              <div
+                key={m.id}
+                role="button"
+                tabIndex={disabled ? -1 : 0}
+                onClick={() => !disabled && handleModelSelect(m.id)}
+                onKeyDown={(e) => { if (!disabled && (e.key === 'Enter' || e.key === ' ')) handleModelSelect(m.id) }}
+                className={`flex items-start gap-2 px-2.5 py-2 rounded-md border text-left transition-all duration-150 ${
+                  disabled ? 'opacity-50 cursor-not-allowed' :
+                  isSelected
+                    ? 'border-primary/50 bg-primary/10 ring-1 ring-primary/20 cursor-pointer'
+                    : 'border-border/40 bg-muted/20 hover:bg-muted/40 hover:border-border/60 cursor-pointer'
+                }`}
+              >
+                <div className="flex-1 min-w-0 overflow-hidden">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-medium truncate min-w-0">{m.name}</span>
+                    {m.id === defaultModel && (
+                      <Badge className="text-[8px] px-1 py-0 h-3.5 bg-primary/10 text-primary border-primary/20 flex-shrink-0">
+                        默认
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-[9px] text-muted-foreground truncate mt-0.5">{m.id}</p>
+                  {m.tags && m.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-0.5 mt-1">
+                      {m.tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className={`text-[8px] px-1 py-0 rounded border ${TAG_STYLES[tag] ?? 'bg-muted/30 text-muted-foreground border-border/30'}`}
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
                   )}
                 </div>
-                <p className="text-[9px] text-muted-foreground truncate mt-0.5">{m.id}</p>
               </div>
-              {m.tags && m.tags.length > 0 && (
-                <div className="flex flex-wrap gap-0.5 flex-shrink-0">
-                  {m.tags.map((tag) => (
-                    <span
-                      key={tag}
-                      className={`text-[8px] px-1 py-0 rounded border ${TAG_STYLES[tag] ?? 'bg-muted/30 text-muted-foreground border-border/30'}`}
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
+            )
+          })}
+        </div>
+      </ScrollArea>
 
       {/* Custom model input toggle */}
       <div className="flex items-center gap-2">
@@ -273,6 +276,7 @@ function ProviderCard({
   isAdmin: boolean
 }) {
   const [expanded, setExpanded] = useState(isActive)
+  const [animComplete, setAnimComplete] = useState(false)
   // Track whether the user has edited the API key since loading
   // If the key is masked (starts with ****), we need to know it hasn't been changed
   const isMaskedKey = (provider.apiKey ?? '').startsWith('****')
@@ -296,6 +300,11 @@ function ProviderCard({
   useEffect(() => {
     if (isActive) setExpanded(true)
   }, [isActive])
+
+  // Reset animComplete when collapsing so overflow-hidden is applied during exit animation
+  useEffect(() => {
+    if (!expanded) setAnimComplete(false)
+  }, [expanded])
 
   // For non-admin: a masked key still counts as "configured"
   const hasApiKey = Boolean(apiKey.trim()) || isMaskedKey
@@ -417,7 +426,8 @@ function ProviderCard({
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="overflow-hidden"
+              className={animComplete ? 'overflow-visible' : 'overflow-hidden'}
+              onAnimationComplete={() => setAnimComplete(true)}
             >
               <div className="mt-4 pt-4 border-t border-border/30 space-y-4">
                 {/* API Key */}
