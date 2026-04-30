@@ -43,3 +43,8 @@ export async function middleware(request: NextRequest) {
 
   return NextResponse.next()
 }
+
+export const config = {
+  // Only run middleware on API routes, skip page routes entirely
+  matcher: '/api/:path*',
+}
