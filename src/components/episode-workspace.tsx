@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore, type EpisodeDetail, type Character, type Scene, type Storyboard } from '@/lib/store'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
+import { usePermissions } from '@/hooks/use-permissions'
 import { AgentExecutionPanel, useAgentExecution } from '@/components/agent-execution-panel'
 import { ModelSelector } from '@/components/model-selector'
 import { Button } from '@/components/ui/button'
@@ -151,6 +152,7 @@ export function EpisodeWorkspace() {
     setAiLoading,
   } = useAppStore()
   const { toast } = useToast()
+  const perms = usePermissions()
 
   const [activeStep, setActiveStep] = useState<StepKey>('raw')
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -927,6 +929,15 @@ export function EpisodeWorkspace() {
   // ── Export final video (client-side canvas + MediaRecorder + audio mixing) ─
 
   const handleExport = async () => {
+    // Check export permission
+    if (!perms.canExport) {
+      toast({
+        title: '导出功能需要专业版',
+        description: '免费用户无法导出成片，请升级专业版。',
+        variant: 'destructive',
+      })
+      return
+    }
     const videoShots = storyboards.filter((s) => s.composedUrl || s.videoUrl)
     if (videoShots.length === 0) {
       toast({ title: '没有可导出的镜头视频', variant: 'destructive' })
@@ -2289,10 +2300,11 @@ export function EpisodeWorkspace() {
                   size="sm"
                   onClick={handleExport}
                   disabled={exporting || videoShots.length === 0}
-                  className="amber-glow"
+                  className={perms.canExport ? 'amber-glow' : ''}
+                  variant={perms.canExport ? 'default' : 'outline'}
                 >
                   {exporting ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
-                  导出成片
+                  {perms.canExport ? '导出成片' : '导出（需专业版）'}
                 </Button>
               </div>
 

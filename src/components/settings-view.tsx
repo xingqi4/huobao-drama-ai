@@ -21,6 +21,7 @@ import {
   CollapsibleContent,
 } from '@/components/ui/collapsible'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { UserMenu } from '@/components/user-menu'
 import {
   ArrowLeft,
   Settings,
@@ -1109,6 +1110,7 @@ export function SettingsView() {
             <Settings className="size-5 text-primary" />
             <h1 className="text-xl font-bold">平台设置</h1>
           </div>
+          <UserMenu />
         </div>
       </header>
 

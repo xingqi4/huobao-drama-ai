@@ -5,6 +5,7 @@ import { motion } from 'framer-motion'
 import { useAppStore, type Drama } from '@/lib/store'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
+import { usePermissions } from '@/hooks/use-permissions'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -195,6 +196,7 @@ function ProjectCard({
 export function ProjectListView() {
   const { dramas, setDramas, navigateToProject, navigateToSettings, setLoading, loading } = useAppStore()
   const { toast } = useToast()
+  const perms = usePermissions()
 
   // create dialog
   const [createOpen, setCreateOpen] = useState(false)
@@ -229,6 +231,15 @@ export function ProjectListView() {
   // create project
   const handleCreate = async () => {
     if (!newTitle.trim()) return
+    // Check project limit
+    if (!perms.canCreateProject(dramas.length)) {
+      toast({
+        title: '项目数量已达上限',
+        description: `免费用户最多创建${perms.maxProjects}个项目，升级专业版可无限制创建。`,
+        variant: 'destructive',
+      })
+      return
+    }
     setCreating(true)
     try {
       await api.dramas.create({
@@ -278,12 +289,21 @@ export function ProjectListView() {
                 {dramas.length} 个项目
               </Badge>
             )}
+            {perms.role !== 'pro' && perms.role !== 'admin' && (
+              <Badge variant="outline" className="text-[10px] text-amber-500 border-amber-500/30 bg-amber-500/10">
+                {perms.maxProjects > 0 ? `${dramas.length}/${perms.maxProjects} 项目` : ''}
+              </Badge>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="icon" onClick={navigateToSettings} title="设置">
               <Settings className="size-4" />
             </Button>
-            <Button onClick={() => setCreateOpen(true)} className="amber-glow">
+            <Button
+              onClick={() => setCreateOpen(true)}
+              className="amber-glow"
+              disabled={!perms.canCreateProject(dramas.length)}
+            >
               <Plus className="size-4" />
               <span className="hidden sm:inline">新建项目</span>
             </Button>
