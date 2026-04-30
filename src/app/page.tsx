@@ -75,9 +75,10 @@ function AuthGuard() {
   )
 }
 
+// SessionProvider with refetch interval to quickly detect login state changes
 export default function Home() {
   return (
-    <SessionProvider>
+    <SessionProvider refetchInterval={5} refetchOnWindowFocus={true}>
       <AuthGuard />
     </SessionProvider>
   )

@@ -13,6 +13,10 @@ export type { UserRole } from './permissions'
 // ============================================================
 
 export const authOptions: NextAuthOptions = {
+  // For proxy/gateway environments: don't force secure cookies
+  // since the gateway may terminate SSL
+  useSecureCookies: false,
+
   providers: [
     CredentialsProvider({
       name: 'credentials',
@@ -22,7 +26,7 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
-          throw new Error('请输入邮箱和密码')
+          return null
         }
 
         const user = await db.user.findUnique({
@@ -30,16 +34,16 @@ export const authOptions: NextAuthOptions = {
         })
 
         if (!user) {
-          throw new Error('邮箱未注册')
+          return null
         }
 
         if (!user.isActive) {
-          throw new Error('账号已被禁用，请联系管理员')
+          return null
         }
 
         const isValid = await bcrypt.compare(credentials.password, user.password)
         if (!isValid) {
-          throw new Error('密码错误')
+          return null
         }
 
         return {
@@ -62,7 +66,51 @@ export const authOptions: NextAuthOptions = {
     maxAge: 7 * 24 * 60 * 60, // 7 days
   },
 
+  cookies: {
+    sessionToken: {
+      name: 'next-auth.session-token',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: false,
+      },
+    },
+    callbackUrl: {
+      name: 'next-auth.callback-url',
+      options: {
+        httpOnly: false,
+        sameSite: 'lax',
+        path: '/',
+        secure: false,
+      },
+    },
+    csrfToken: {
+      name: 'next-auth.csrf-token',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: false,
+      },
+    },
+  },
+
   callbacks: {
+    async redirect({ url, baseUrl }) {
+      // In proxied environments, baseUrl may be wrong (e.g., http://localhost:3000)
+      // Use the url param or the x-forwarded headers to construct the correct redirect
+      if (url.startsWith('/')) return url
+      // If url is already a valid external URL, use it
+      try {
+        const parsedUrl = new URL(url)
+        // Keep the path but don't rewrite the origin — trust the url param
+        return url
+      } catch {
+        return baseUrl
+      }
+    },
+
     async jwt({ token, user, trigger, session }) {
       // Initial sign in — add user info to token
       if (user) {
@@ -89,12 +137,6 @@ export const authOptions: NextAuthOptions = {
       }
       return session
     },
-  },
-
-  pages: {
-    // We handle auth UI in our SPA, not separate pages
-    // signIn: '/auth/signin',
-    error: '/api/auth/error',
   },
 
   debug: process.env.NODE_ENV === 'development',

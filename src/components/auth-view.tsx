@@ -37,21 +37,38 @@ export function AuthView() {
     }
     setLoading(true)
     try {
-      const result = await signIn('credentials', {
+      // Step 1: Validate credentials via our custom endpoint first
+      // This gives us clear error messages before triggering NextAuth
+      const validateRes = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+      })
+      const validateData = await validateRes.json()
+
+      if (!validateRes.ok || !validateData.success) {
+        toast({
+          title: '登录失败',
+          description: validateData.error || '邮箱或密码错误',
+          variant: 'destructive',
+        })
+        setLoading(false)
+        return
+      }
+
+      // Step 2: Credentials are valid — use NextAuth signIn WITHOUT redirect:false
+      // Let NextAuth handle the redirect naturally to establish the session cookie.
+      // The page will reload and AuthGuard will detect the session.
+      await signIn('credentials', {
         email: loginEmail,
         password: loginPassword,
-        redirect: false,
+        // No redirect:false — let NextAuth redirect naturally
+        // This ensures the session cookie is properly set in the browser
+        callbackUrl: window.location.origin + '/',
       })
-      if (result?.error) {
-        toast({ title: '登录失败', description: result.error, variant: 'destructive' })
-      } else {
-        toast({ title: '登录成功', description: '欢迎回来！' })
-        // Reload to refresh session
-        window.location.reload()
-      }
+      // Page will redirect — no need to do anything else
     } catch (err: any) {
-      toast({ title: '登录异常', description: err.message, variant: 'destructive' })
-    } finally {
+      toast({ title: '登录异常', description: err.message || '网络错误', variant: 'destructive' })
       setLoading(false)
     }
   }
