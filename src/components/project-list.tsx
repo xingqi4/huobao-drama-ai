@@ -296,9 +296,11 @@ export function ProjectListView() {
             )}
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="icon" onClick={navigateToSettings} title="设置">
-              <Settings className="size-4" />
-            </Button>
+            {perms.role === 'admin' && (
+              <Button variant="outline" size="icon" onClick={navigateToSettings} title="设置">
+                <Settings className="size-4" />
+              </Button>
+            )}
             <Button
               onClick={() => setCreateOpen(true)}
               className="amber-glow"

@@ -116,11 +116,13 @@ function ModelSelector({
   value,
   onChange,
   defaultModel,
+  disabled = false,
 }: {
   models: ModelOption[]
   value: string
   onChange: (val: string) => void
   defaultModel: string
+  disabled?: boolean
 }) {
   const [showCustom, setShowCustom] = useState(false)
   const [customValue, setCustomValue] = useState(value)
@@ -155,8 +157,10 @@ function ModelSelector({
             <button
               key={m.id}
               type="button"
-              onClick={() => handleModelSelect(m.id)}
+              onClick={() => !disabled && handleModelSelect(m.id)}
+              disabled={disabled}
               className={`flex items-center gap-2 px-2.5 py-2 rounded-md border text-left transition-all duration-150 ${
+                disabled ? 'opacity-50 cursor-not-allowed' :
                 isSelected
                   ? 'border-primary/50 bg-primary/10 ring-1 ring-primary/20'
                   : 'border-border/40 bg-muted/20 hover:bg-muted/40 hover:border-border/60'
@@ -198,6 +202,7 @@ function ModelSelector({
           size="sm"
           className="text-[10px] h-6 gap-1"
           onClick={() => setShowCustom(!showCustom)}
+          disabled={disabled}
         >
           <ListChecks className="size-3" />
           {showCustom ? '收起自定义输入' : '手动输入模型ID'}
@@ -256,6 +261,7 @@ function ProviderCard({
   onSetActive,
   onSave,
   saving,
+  isAdmin,
 }: {
   provider: ProviderConfig
   preset: ProviderPreset | undefined
@@ -263,9 +269,14 @@ function ProviderCard({
   onSetActive: () => void
   onSave: (updated: ProviderConfig) => Promise<void>
   saving: boolean
+  isAdmin: boolean
 }) {
   const [expanded, setExpanded] = useState(isActive)
-  const [apiKey, setApiKey] = useState(provider.apiKey ?? '')
+  // Track whether the user has edited the API key since loading
+  // If the key is masked (starts with ****), we need to know it hasn't been changed
+  const isMaskedKey = (provider.apiKey ?? '').startsWith('****')
+  const [apiKey, setApiKey] = useState(isMaskedKey ? '' : (provider.apiKey ?? ''))
+  const [apiKeyEdited, setApiKeyEdited] = useState(false)
   const [baseUrl, setBaseUrl] = useState(provider.baseUrl ?? '')
   const [model, setModel] = useState(provider.model ?? '')
   const [showKey, setShowKey] = useState(false)
@@ -273,7 +284,9 @@ function ProviderCard({
 
   // Sync local state when provider data changes
   useEffect(() => {
-    setApiKey(provider.apiKey ?? '')
+    const newMasked = (provider.apiKey ?? '').startsWith('****')
+    setApiKey(newMasked ? '' : (provider.apiKey ?? ''))
+    setApiKeyEdited(false)
     setBaseUrl(provider.baseUrl ?? '')
     setModel(provider.model ?? '')
   }, [provider.apiKey, provider.baseUrl, provider.model])
@@ -283,14 +296,22 @@ function ProviderCard({
     if (isActive) setExpanded(true)
   }, [isActive])
 
-  const hasApiKey = Boolean(apiKey.trim())
+  // For non-admin: a masked key still counts as "configured"
+  const hasApiKey = Boolean(apiKey.trim()) || isMaskedKey
+
+  const handleApiKeyChange = (value: string) => {
+    setApiKey(value)
+    setApiKeyEdited(true)
+  }
 
   const handleSave = async () => {
     setLocalSaving(true)
     try {
       await onSave({
         ...provider,
-        apiKey,
+        // If key wasn't edited and current is masked, send the masked value
+        // The backend will detect masked keys and preserve the existing one
+        apiKey: apiKeyEdited ? apiKey : (isMaskedKey ? provider.apiKey : apiKey),
         baseUrl,
         model,
       })
@@ -317,13 +338,14 @@ function ProviderCard({
             <RadioGroup
               value={isActive ? provider.provider : ''}
               onValueChange={() => {
-                if (!isActive) onSetActive()
+                if (isAdmin && !isActive) onSetActive()
               }}
               className="flex"
             >
               <RadioGroupItem
                 value={provider.provider}
                 id={`${provider.category}-${provider.provider}`}
+                disabled={!isAdmin}
                 className={isActive ? 'text-primary border-primary' : ''}
               />
             </RadioGroup>
@@ -364,7 +386,7 @@ function ProviderCard({
             <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
               {preset?.description ?? provider.name}
             </p>
-            {preset?.envKey && (
+            {isAdmin && preset?.envKey && (
               <p className="text-[10px] text-muted-foreground/70 mt-0.5">
                 环境变量: {preset.envKey}
               </p>
@@ -402,24 +424,32 @@ function ProviderCard({
                   <Label className="text-xs font-medium flex items-center gap-1.5">
                     <Key className="size-3" />
                     API Key
+                    {!isAdmin && isMaskedKey && (
+                      <Badge variant="secondary" className="text-[9px] px-1.5 py-0 bg-amber-500/10 text-amber-600 border-amber-500/20">
+                        仅管理员可见
+                      </Badge>
+                    )}
                   </Label>
                   <div className="relative">
                     <Input
                       type={showKey ? 'text' : 'password'}
-                      placeholder="sk-..."
-                      value={apiKey}
-                      onChange={(e) => setApiKey(e.target.value)}
+                      placeholder={isAdmin ? 'sk-...' : (isMaskedKey ? '由管理员配置' : 'sk-...')}
+                      value={isAdmin ? apiKey : (isMaskedKey ? provider.apiKey : apiKey)}
+                      onChange={(e) => handleApiKeyChange(e.target.value)}
+                      disabled={!isAdmin}
                       className="bg-muted/30 border-border/50 pr-10"
                     />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setShowKey(!showKey)}
-                      className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                    >
-                      {showKey ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
-                    </Button>
+                    {isAdmin && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowKey(!showKey)}
+                        className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                      >
+                        {showKey ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                      </Button>
+                    )}
                   </div>
                   {!hasApiKey && (
                     <p className="text-[10px] text-muted-foreground/80 flex items-start gap-1">
@@ -440,9 +470,10 @@ function ProviderCard({
                     }
                     value={baseUrl}
                     onChange={(e) => setBaseUrl(e.target.value)}
+                    disabled={!isAdmin}
                     className="bg-muted/30 border-border/50"
                   />
-                  {preset?.defaultBaseUrl && baseUrl !== preset.defaultBaseUrl && (
+                  {isAdmin && preset?.defaultBaseUrl && baseUrl !== preset.defaultBaseUrl && (
                     <Button
                       type="button"
                       variant="outline"
@@ -468,6 +499,7 @@ function ProviderCard({
                       value={model}
                       onChange={setModel}
                       defaultModel={preset.defaultModel}
+                      disabled={!isAdmin}
                     />
                   ) : (
                     <Input
@@ -478,12 +510,14 @@ function ProviderCard({
                       }
                       value={model}
                       onChange={(e) => setModel(e.target.value)}
+                      disabled={!isAdmin}
                       className="bg-muted/30 border-border/50"
                     />
                   )}
                 </div>
 
-                {/* Save button */}
+                {/* Save button — admin only */}
+                {isAdmin && (
                 <div className="flex justify-end pt-1">
                   <Button
                     size="sm"
@@ -499,6 +533,7 @@ function ProviderCard({
                     保存配置
                   </Button>
                 </div>
+                )}
               </div>
             </motion.div>
           )}
@@ -522,6 +557,7 @@ function CategoryPanel({
   testResult,
   testing,
   savingProvider,
+  isAdmin,
 }: {
   category: AiCategory
   providers: ProviderConfig[]
@@ -532,6 +568,7 @@ function CategoryPanel({
   testResult: { success: boolean; provider?: string; model?: string; error?: string; responsePreview?: string } | null
   testing: boolean
   savingProvider: string | null
+  isAdmin: boolean
 }) {
   const meta = CATEGORY_META[category]
 
@@ -546,20 +583,22 @@ function CategoryPanel({
             {meta.badge}
           </Badge>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onTestConnection(category)}
-          disabled={testing}
-          className="gap-1.5"
-        >
-          {testing ? (
+        {isAdmin && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onTestConnection(category)}
+            disabled={testing}
+            className="gap-1.5"
+          >
+            {testing ? (
             <Loader2 className="size-3.5 animate-spin" />
           ) : (
             <Wifi className="size-3.5" />
           )}
           测试连接
         </Button>
+        )}
       </div>
 
       {/* Test result */}
@@ -625,6 +664,7 @@ function CategoryPanel({
               onSetActive={() => onSetActive(category, provider.provider)}
               onSave={onSaveProvider}
               saving={savingProvider === `${provider.category}-${provider.provider}`}
+              isAdmin={isAdmin}
             />
           )
         })}
@@ -911,6 +951,9 @@ export function SettingsView() {
   const { navigateToProjects } = useAppStore()
   const { toast } = useToast()
 
+  // Admin state — determined by API response
+  const [isAdmin, setIsAdmin] = useState(false)
+
   // Provider data from API
   const [providersData, setProvidersData] = useState<Record<AiCategory, ProviderConfig[]>>({
     llm: [],
@@ -948,6 +991,8 @@ export function SettingsView() {
         const data = await api.settings.get()
         setProvidersData(data.providers as Record<AiCategory, ProviderConfig[]>)
         setPresetsData(data.presets as Record<AiCategory, ProviderPreset[]>)
+        // Track admin status from API response
+        setIsAdmin((data as any).isAdmin === true)
         // Load agent configs
         const agents = await api.agents.list()
         setAgentsList(agents)
@@ -1132,7 +1177,7 @@ export function SettingsView() {
               onValueChange={setActiveTab}
               className="w-full"
             >
-              <TabsList className="w-full sm:w-auto grid grid-cols-5 sm:inline-flex h-auto p-1">
+              <TabsList className={`w-full sm:w-auto grid ${isAdmin ? 'grid-cols-5' : 'grid-cols-4'} sm:inline-flex h-auto p-1`}>
                 {(Object.keys(CATEGORY_META) as AiCategory[]).map((cat) => {
                   const meta = CATEGORY_META[cat]
                   const activeProvider = providersData[cat]?.find((p) => p.isActive)
@@ -1156,6 +1201,7 @@ export function SettingsView() {
                     </TabsTrigger>
                   )
                 })}
+                {isAdmin && (
                 <TabsTrigger
                   value="agent"
                   className="gap-1.5 text-xs sm:text-sm py-2 px-2 sm:px-3"
@@ -1167,6 +1213,7 @@ export function SettingsView() {
                     <span className="inline-block size-1.5 rounded-full bg-emerald-500" />
                   )}
                 </TabsTrigger>
+                )}
               </TabsList>
 
               {(Object.keys(CATEGORY_META) as AiCategory[]).map((category) => (
@@ -1181,11 +1228,13 @@ export function SettingsView() {
                     testResult={testResults[category]}
                     testing={testingCategory === category}
                     savingProvider={savingProvider}
+                    isAdmin={isAdmin}
                   />
                 </TabsContent>
               ))}
 
-              {/* Agent Configuration Tab */}
+              {/* Agent Configuration Tab — admin only */}
+              {isAdmin && (
               <TabsContent value="agent" className="mt-4">
                 <div className="space-y-4">
                   {/* Header */}
@@ -1227,6 +1276,7 @@ export function SettingsView() {
                   </div>
                 </div>
               </TabsContent>
+              )}
             </Tabs>
 
             {/* Bottom info */}
@@ -1234,7 +1284,9 @@ export function SettingsView() {
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <p className="text-xs text-muted-foreground flex items-start gap-1.5">
                   <Info className="size-3.5 mt-0.5 flex-shrink-0" />
-                  API Key 等敏感信息仅保存在服务端，不会泄露到客户端
+                  {isAdmin
+                    ? 'API Key 等敏感信息仅保存在服务端，普通用户无法查看完整密钥'
+                    : '当前 AI 供应商由管理员配置，如需自定义请联系管理员'}
                 </p>
                 <p className="text-[10px] text-muted-foreground/60">
                   配置完成后可返回项目开始创作

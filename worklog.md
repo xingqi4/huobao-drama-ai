@@ -135,3 +135,36 @@ Stage Summary:
 - Auto-ensure-admin in build.js prevents future role override on redeploy
 - Reserved email protection prevents registration with admin emails
 - fix-admin API available for emergency admin recovery (uses NEXTAUTH_SECRET as auth)
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix bug - API key info should not be visible to non-admin users
+
+Work Log:
+- Audited entire codebase for API key exposure vulnerabilities
+- Found 7 distinct vulnerabilities ranging from CRITICAL to MEDIUM
+- Fixed /api/settings route: added getServerSession auth check, admin role check for POST, and API key masking for non-admin users (shows ****last4)
+- Fixed /api/health route: moved aiProviderVars, vercelPostgresVars, databaseUrlMasked behind admin-only check
+- Fixed /api/settings POST: detects masked keys (****) and preserves existing DB values instead of overwriting
+- Fixed project-list.tsx: hidden Settings button from non-admin users
+- Fixed settings-view.tsx: 
+  - Added isAdmin state tracked from API response
+  - ProviderCard: API Key input disabled for non-admin, shows "仅管理员可见" badge
+  - ProviderCard: Base URL, Model inputs disabled for non-admin
+  - ProviderCard: Save button hidden for non-admin
+  - ProviderCard: envKey display hidden for non-admin
+  - ProviderCard: RadioGroupItem disabled for non-admin
+  - ModelSelector: Added disabled prop support
+  - CategoryPanel: Test Connection button hidden for non-admin
+  - SettingsView: Agent Configuration tab hidden for non-admin
+  - Bottom info text adapts to admin/non-admin context
+- All tests pass: unauthenticated GET /api/settings returns 401, unauthenticated /api/health has no sensitive data, POST /api/settings requires admin role
+- Lint passes with no errors
+
+Stage Summary:
+- API keys are now masked (****1234) for non-admin users on GET /api/settings
+- POST /api/settings requires admin role (403 for non-admin)
+- GET /api/health hides sensitive info (AI provider vars, DB URLs) for non-admin
+- Frontend: Settings button hidden from non-admin, all config inputs disabled, Agent tab hidden
+- write-only key handling: masked keys sent back to backend are detected and preserved
