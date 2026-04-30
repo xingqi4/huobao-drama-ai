@@ -58,3 +58,22 @@ Stage Summary:
 - Middleware fixed to avoid Edge Runtime crash (cookie-based auth check instead of getToken)
 - All code pushed to GitHub
 - Note: dev server process terminates after serving requests in sandbox (environmental issue, not code issue)
+
+---
+Task ID: 3
+Agent: main
+Task: Fix .env missing NEXTAUTH vars, verify auth system, commit and push
+
+Work Log:
+- Discovered .env was missing NEXTAUTH_SECRET and NEXTAUTH_URL (critical for NextAuth)
+- Added NEXTAUTH_SECRET and NEXTAUTH_URL back to .env
+- Restarted dev server, verified page returns HTTP 200
+- Tested full login flow: CSRF → credentials login → session check
+- Confirmed admin@huobao.com / admin123 login works, session returns correct role (admin)
+- Committed fix: "fix: restore NEXTAUTH env vars and ensure auth system works"
+- Pushed to GitHub: commit 8939997
+
+Stage Summary:
+- Auth system fully functional: login, session, role-based access all working
+- Test account: admin@huobao.com / admin123 (admin role)
+- Code pushed to GitHub
