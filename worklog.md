@@ -110,3 +110,28 @@ Stage Summary:
 - Proxy-compatible cookie and redirect configuration
 - AUTH_TRUST_HOST=true enables NextAuth to detect correct URL from forwarded headers
 - Browser testing limited by sandbox dev server instability (environmental, not code issue)
+
+---
+Task ID: 5
+Agent: main
+Task: Fix admin login on Vercel — user registered admin email as free role
+
+Work Log:
+- User reported admin@huobao.com still can't log in on Vercel
+- Root cause: user had used admin@huobao.com to register via the UI, creating a free-role user that overwrote the admin
+- Vercel deployment found at https://huobao-drama-ai.vercel.app
+- Created POST /api/auth/fix-admin endpoint — authenticated via NEXTAUTH_SECRET
+  - If user exists: force-update role to admin + reset password
+  - If user doesn't exist: create admin user
+- Added admin email protection in register route: blocks admin@huobao.com, admin@huobao.ai
+- Added auto-ensure-admin in build.js: every Vercel deploy forces admin@huobao.com to admin role
+- Pushed code (commit 92bf2ac), waited for Vercel deployment
+- Called fix-admin API on Vercel: successfully updated admin@huobao.com to admin role
+- Verified login on Vercel: CSRF → signIn → session returns { role: "admin" } ✅
+- Verified admin email protection: register with admin@huobao.ai returns "系统保留邮箱" ✅
+
+Stage Summary:
+- Admin account fixed on Vercel: admin@huobao.com / admin123 → role: admin
+- Auto-ensure-admin in build.js prevents future role override on redeploy
+- Reserved email protection prevents registration with admin emails
+- fix-admin API available for emergency admin recovery (uses NEXTAUTH_SECRET as auth)
