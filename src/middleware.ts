@@ -1,55 +1,45 @@
 import { NextResponse } from 'next/server'
-import { getToken } from 'next-auth/jwt'
+import type { NextRequest } from 'next/server'
 
 // ============================================================
-// NextAuth Middleware — Route protection
-// Note: Next.js 16 recommends "proxy" convention, but middleware
-// still works. We use it for API route protection.
+// Middleware — API route protection
+// Lightweight cookie-based check (no next-auth/jwt import)
+// to avoid Edge Runtime compatibility issues
 // ============================================================
 
-export async function middleware(request: Request) {
+export async function middleware(request: NextRequest) {
   const { pathname } = new URL(request.url)
 
-  // Allow auth routes, health, migrate, and static files
-  if (
-    pathname.startsWith('/api/auth/') ||
-    pathname === '/api/health' ||
-    pathname === '/api/migrate' ||
-    pathname.startsWith('/_next/') ||
-    pathname.startsWith('/favicon')
-  ) {
-    return NextResponse.next()
-  }
-
-  // For protected API routes, check for JWT token
-  if (pathname.startsWith('/api/')) {
-    const token = await getToken({ req: request as any })
-
-    if (!token) {
-      return NextResponse.json({ error: '未登录' }, { status: 401 })
-    }
-
-    return NextResponse.next()
-  }
-
-  // For page routes, let the client-side AuthGuard handle it
-  return NextResponse.next()
-}
-
-export const config = {
-  matcher: [
-    // Protect all API routes EXCEPT auth and health
-    '/api/dramas/:path*',
-    '/api/episodes/:path*',
-    '/api/characters/:path*',
-    '/api/scenes/:path*',
-    '/api/storyboards/:path*',
-    '/api/ai/:path*',
-    '/api/agent/:path*',
-    '/api/agents/:path*',
-    '/api/settings/:path*',
-    '/api/upload/:path*',
+  // Only protect specific API route prefixes
+  const protectedPrefixes = [
+    '/api/dramas',
+    '/api/episodes',
+    '/api/characters',
+    '/api/scenes',
+    '/api/storyboards',
+    '/api/ai/',
+    '/api/agent/',
+    '/api/agents',
+    '/api/settings',
+    '/api/upload',
     '/api/auth/profile',
     '/api/auth/users',
-  ],
+  ]
+
+  const isProtected = protectedPrefixes.some(
+    (prefix) => pathname === prefix || pathname.startsWith(prefix + '/')
+  )
+
+  if (isProtected) {
+    // Check for NextAuth session token cookie
+    const sessionToken =
+      request.cookies.get('next-auth.session-token')?.value ||
+      request.cookies.get('__Secure-next-auth.session-token')?.value
+
+    if (!sessionToken) {
+      return NextResponse.json({ error: '未登录' }, { status: 401 })
+    }
+  }
+
+  return NextResponse.next()
 }

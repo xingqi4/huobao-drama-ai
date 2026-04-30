@@ -3,6 +3,10 @@ import CredentialsProvider from 'next-auth/providers/credentials'
 import bcrypt from 'bcryptjs'
 import { db } from '@/lib/db'
 
+// Re-export permissions from the client-safe module
+export { ROLE_PERMISSIONS, canCreateProject, canUseAiGeneration, getPermissions } from './permissions'
+export type { UserRole } from './permissions'
+
 // ============================================================
 // NextAuth v4 Configuration — Credentials + JWT strategy
 // Works with both SQLite (local) and PostgreSQL (Vercel)
@@ -94,60 +98,4 @@ export const authOptions: NextAuthOptions = {
   },
 
   debug: process.env.NODE_ENV === 'development',
-}
-
-// ============================================================
-// Permission constants
-// ============================================================
-
-export type UserRole = 'free' | 'pro' | 'admin'
-
-export const ROLE_PERMISSIONS: Record<UserRole, {
-  label: string
-  maxProjects: number       // -1 = unlimited
-  maxAiGenerationsPerDay: number // -1 = unlimited
-  canExport: boolean
-  canManageUsers: boolean
-  canAccessAllProjects: boolean
-}> = {
-  free: {
-    label: '免费用户',
-    maxProjects: 3,
-    maxAiGenerationsPerDay: 20,
-    canExport: false,
-    canManageUsers: false,
-    canAccessAllProjects: false,
-  },
-  pro: {
-    label: '专业版',
-    maxProjects: -1,
-    maxAiGenerationsPerDay: -1,
-    canExport: true,
-    canManageUsers: false,
-    canAccessAllProjects: false,
-  },
-  admin: {
-    label: '管理员',
-    maxProjects: -1,
-    maxAiGenerationsPerDay: -1,
-    canExport: true,
-    canManageUsers: true,
-    canAccessAllProjects: true,
-  },
-}
-
-export function getPermissions(role: string) {
-  return ROLE_PERMISSIONS[role as UserRole] ?? ROLE_PERMISSIONS.free
-}
-
-export function canCreateProject(role: string, currentProjectCount: number): boolean {
-  const perms = getPermissions(role)
-  if (perms.maxProjects === -1) return true
-  return currentProjectCount < perms.maxProjects
-}
-
-export function canUseAiGeneration(role: string, todayCount: number): boolean {
-  const perms = getPermissions(role)
-  if (perms.maxAiGenerationsPerDay === -1) return true
-  return todayCount < perms.maxAiGenerationsPerDay
 }

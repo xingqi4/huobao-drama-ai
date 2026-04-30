@@ -1,7 +1,7 @@
 'use client'
 
 import { useSession } from 'next-auth/react'
-import { ROLE_PERMISSIONS, type UserRole } from '@/lib/auth'
+import { ROLE_PERMISSIONS, type UserRole } from '@/lib/permissions'
 
 // ============================================================
 // usePermissions — Client-side permission checks

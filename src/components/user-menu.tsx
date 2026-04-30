@@ -36,7 +36,7 @@ import {
   AvatarImage,
 } from '@/components/ui/avatar'
 import { LogOut, User, Settings, Crown, Loader2, Users } from 'lucide-react'
-import { ROLE_PERMISSIONS, type UserRole } from '@/lib/auth'
+import { ROLE_PERMISSIONS, type UserRole } from '@/lib/permissions'
 
 // ============================================================
 // User Menu — Dropdown with profile, role badge, sign out
