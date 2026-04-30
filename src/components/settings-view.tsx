@@ -150,20 +150,21 @@ function ModelSelector({
   return (
     <div className="space-y-2">
       {/* Model grid - clickable model cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-64 overflow-y-auto pr-1">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-64 overflow-y-auto pr-1 custom-scrollbar">
         {models.map((m) => {
           const isSelected = value === m.id
           return (
-            <button
+            <div
               key={m.id}
-              type="button"
+              role="button"
+              tabIndex={disabled ? -1 : 0}
               onClick={() => !disabled && handleModelSelect(m.id)}
-              disabled={disabled}
+              onKeyDown={(e) => { if (!disabled && (e.key === 'Enter' || e.key === ' ')) handleModelSelect(m.id) }}
               className={`flex items-center gap-2 px-2.5 py-2 rounded-md border text-left transition-all duration-150 ${
                 disabled ? 'opacity-50 cursor-not-allowed' :
                 isSelected
-                  ? 'border-primary/50 bg-primary/10 ring-1 ring-primary/20'
-                  : 'border-border/40 bg-muted/20 hover:bg-muted/40 hover:border-border/60'
+                  ? 'border-primary/50 bg-primary/10 ring-1 ring-primary/20 cursor-pointer'
+                  : 'border-border/40 bg-muted/20 hover:bg-muted/40 hover:border-border/60 cursor-pointer'
               }`}
             >
               <div className="flex-1 min-w-0">
@@ -189,7 +190,7 @@ function ModelSelector({
                   ))}
                 </div>
               )}
-            </button>
+            </div>
           )
         })}
       </div>

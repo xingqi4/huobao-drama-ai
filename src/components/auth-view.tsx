@@ -111,40 +111,50 @@ export function AuthView() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-background">
-      {/* Background decoration */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-primary/5 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-primary/8 rounded-full blur-3xl" />
-        <div className="absolute top-1/3 left-1/4 w-64 h-64 bg-amber-500/5 rounded-full blur-3xl" />
+    <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-background relative overflow-hidden">
+      {/* Background decoration — soft gradient blobs */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
+        <div className="absolute -top-32 -right-32 w-72 h-72 bg-primary/[0.04] rounded-full blur-3xl" />
+        <div className="absolute -bottom-32 -left-32 w-80 h-80 bg-primary/[0.06] rounded-full blur-3xl" />
+        <div className="absolute top-1/3 left-1/4 w-56 h-56 bg-amber-500/[0.04] rounded-full blur-3xl" />
       </div>
 
       <div className="relative z-10 w-full max-w-md">
         {/* Logo & Title */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center size-14 rounded-2xl bg-primary/10 mb-4">
+          <div className="inline-flex items-center justify-center size-14 rounded-2xl bg-primary/10 border border-primary/10 mb-4">
             <Film className="size-7 text-primary" />
           </div>
-          <h1 className="text-2xl font-bold">AI短剧创作平台</h1>
+          <h1 className="text-2xl font-bold tracking-tight">AI短剧创作平台</h1>
           <p className="text-sm text-muted-foreground mt-2">从剧本到成片，一站式短剧制作工作台</p>
         </div>
 
         {/* Auth Card */}
-        <Card className="border-border/60 shadow-xl shadow-black/10">
+        <Card className="border-border/40 shadow-lg shadow-black/5 overflow-hidden">
           <Tabs value={tab} onValueChange={(v) => setTab(v as 'login' | 'register')}>
-            <TabsList className="grid w-full grid-cols-2 rounded-none border-b border-border/50">
-              <TabsTrigger value="login" className="py-3">登录</TabsTrigger>
-              <TabsTrigger value="register" className="py-3">注册</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-2 h-11 rounded-none border-b border-border/40 bg-muted/30 p-0">
+              <TabsTrigger
+                value="login"
+                className="h-full rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-background data-[state=active]:shadow-none text-sm font-medium transition-all"
+              >
+                登录
+              </TabsTrigger>
+              <TabsTrigger
+                value="register"
+                className="h-full rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-background data-[state=active]:shadow-none text-sm font-medium transition-all"
+              >
+                注册
+              </TabsTrigger>
             </TabsList>
 
             {/* Login Tab */}
             <TabsContent value="login" className="mt-0">
               <form onSubmit={handleLogin}>
-                <CardHeader className="pb-4 pt-6">
+                <CardHeader className="pb-4 pt-6 px-6">
                   <CardTitle className="text-lg">欢迎回来</CardTitle>
                   <CardDescription>登录你的账号继续创作</CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-4 px-6">
                   <div className="space-y-2">
                     <Label htmlFor="login-email" className="text-sm">邮箱</Label>
                     <div className="relative">
@@ -176,7 +186,7 @@ export function AuthView() {
                     </div>
                   </div>
                 </CardContent>
-                <CardFooter className="flex-col gap-3 pb-6">
+                <CardFooter className="flex-col gap-3 pb-6 px-6">
                   <Button
                     type="submit"
                     className="w-full"
@@ -196,11 +206,11 @@ export function AuthView() {
             {/* Register Tab */}
             <TabsContent value="register" className="mt-0">
               <form onSubmit={handleRegister}>
-                <CardHeader className="pb-4 pt-6">
+                <CardHeader className="pb-4 pt-6 px-6">
                   <CardTitle className="text-lg">创建账号</CardTitle>
                   <CardDescription>注册开始你的创作之旅</CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-4 px-6">
                   <div className="space-y-2">
                     <Label htmlFor="reg-email" className="text-sm">邮箱</Label>
                     <div className="relative">
@@ -261,7 +271,7 @@ export function AuthView() {
                     </div>
                   </div>
                 </CardContent>
-                <CardFooter className="flex-col gap-3 pb-6">
+                <CardFooter className="flex-col gap-3 pb-6 px-6">
                   <Button
                     type="submit"
                     className="w-full"
@@ -281,24 +291,24 @@ export function AuthView() {
         </Card>
 
         {/* Feature highlights */}
-        <div className="mt-8 grid grid-cols-3 gap-4 text-center">
-          <div className="flex flex-col items-center gap-1.5">
-            <div className="size-8 rounded-lg bg-primary/10 flex items-center justify-center">
+        <div className="mt-8 grid grid-cols-3 gap-3 text-center">
+          <div className="flex flex-col items-center gap-2 p-3 rounded-xl bg-muted/20 border border-border/20">
+            <div className="size-9 rounded-lg bg-primary/10 border border-primary/10 flex items-center justify-center">
               <Sparkles className="size-4 text-primary" />
             </div>
-            <span className="text-xs text-muted-foreground">AI 智能创作</span>
+            <span className="text-[11px] text-muted-foreground leading-tight">AI 智能创作</span>
           </div>
-          <div className="flex flex-col items-center gap-1.5">
-            <div className="size-8 rounded-lg bg-primary/10 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-2 p-3 rounded-xl bg-muted/20 border border-border/20">
+            <div className="size-9 rounded-lg bg-primary/10 border border-primary/10 flex items-center justify-center">
               <Zap className="size-4 text-primary" />
             </div>
-            <span className="text-xs text-muted-foreground">多模型适配</span>
+            <span className="text-[11px] text-muted-foreground leading-tight">多模型适配</span>
           </div>
-          <div className="flex flex-col items-center gap-1.5">
-            <div className="size-8 rounded-lg bg-primary/10 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-2 p-3 rounded-xl bg-muted/20 border border-border/20">
+            <div className="size-9 rounded-lg bg-primary/10 border border-primary/10 flex items-center justify-center">
               <Shield className="size-4 text-primary" />
             </div>
-            <span className="text-xs text-muted-foreground">角色权限管理</span>
+            <span className="text-[11px] text-muted-foreground leading-tight">角色权限管理</span>
           </div>
         </div>
       </div>
