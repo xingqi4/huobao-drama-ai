@@ -464,14 +464,19 @@ export async function getActiveProvider(category: AiCategory): Promise<ProviderC
   }
 
   // Fallback: check env vars (only for providers that have env keys)
+  // Supports both uppercase (OPENROUTER_API_KEY) and mixed-case (OpenRouter_API_KEY)
   const presets = PROVIDER_PRESETS[category]
   for (const preset of presets) {
-    if (preset.envKey && process.env[preset.envKey]) {
+    if (!preset.envKey) continue
+    const apiKey = process.env[preset.envKey]
+      || (preset.provider === 'openrouter' ? process.env['OpenRouter_API_KEY'] : '')
+      || ''
+    if (apiKey) {
       return {
         category,
         provider: preset.provider,
         name: preset.name,
-        apiKey: process.env[preset.envKey]!,
+        apiKey,
         baseUrl: preset.defaultBaseUrl,
         model: preset.defaultModel,
         isActive: true,
@@ -499,11 +504,23 @@ export async function getAllProviders(category: AiCategory): Promise<ProviderCon
     const existing = dbProviders.find((p) => p.provider === preset.provider)
     // Use || instead of ?? because Prisma stores '' (empty string) not null
     // ?? treats '' as a real value and won't fall back to preset defaults
+    // Support both uppercase and mixed-case env var names
+    // e.g., OPENROUTER_API_KEY and OpenRouter_API_KEY
+    const envApiKey = (() => {
+      if (!preset.envKey) return ''
+      const val = process.env[preset.envKey]
+      if (val) return val
+      // Fallback: try OpenRouter_API_KEY for openrouter provider
+      if (preset.provider === 'openrouter' && process.env['OpenRouter_API_KEY']) {
+        return process.env['OpenRouter_API_KEY']
+      }
+      return ''
+    })()
     result.push({
       category,
       provider: preset.provider,
       name: existing?.name || preset.name,
-      apiKey: existing?.apiKey || (preset.envKey ? (process.env[preset.envKey] || '') : ''),
+      apiKey: existing?.apiKey || envApiKey,
       baseUrl: existing?.baseUrl || preset.defaultBaseUrl,
       model: existing?.model || preset.defaultModel,
       isActive: existing?.isActive ?? false,
@@ -628,7 +645,8 @@ export async function autoInitProviders(): Promise<string[]> {
 
   // If no LLM is active, auto-configure OpenRouter from env var
   if (!activeLlm) {
-    const openrouterKey = process.env.OPENROUTER_API_KEY || ''
+    // Support both OPENROUTER_API_KEY and OpenRouter_API_KEY (case-insensitive env vars)
+    const openrouterKey = process.env.OPENROUTER_API_KEY || process.env.OpenRouter_API_KEY || ''
     const preset = PROVIDER_PRESETS.llm.find((p) => p.provider === 'openrouter')
 
     if (preset && openrouterKey) {
