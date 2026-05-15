@@ -714,9 +714,13 @@ export const aiClient = {
       return parsed.imageBase64
     }
 
-    // Async response — need to poll
+    // Async response — return taskId for client-side polling
+    // For Vercel compatibility, return immediately with taskId
+    // Client will poll /api/ai/poll-status for results
     if (parsed.isAsync && parsed.taskId) {
-      return this._pollImageTask(adapter, config, parsed.taskId)
+      const err = new Error(`ASYNC_TASK:${parsed.taskId}`)
+      err.name = 'AsyncTaskError'
+      throw err
     }
 
     throw new Error('图片生成返回数据为空')
@@ -726,7 +730,7 @@ export const aiClient = {
     adapter: import('@/lib/adapters/image').ImageProviderAdapter,
     config: { baseUrl: string; apiKey: string; model: string },
     taskId: string,
-    maxPolls = 120,
+    maxPolls = 24,
     interval = 5000
   ): Promise<string> {
     const pollReq = adapter.buildPollRequest(config, taskId)
@@ -918,7 +922,15 @@ export const aiClient = {
       if (parsed.videoUrl) {
         videoUrl = parsed.videoUrl
       } else if (parsed.isAsync && parsed.taskId) {
-        videoUrl = await this._pollVideoTask(adapter, config, parsed.taskId)
+        // For Vercel compatibility, return taskId for client-side polling
+        // Save taskId to storyboard so client can poll
+        await db.storyboard.update({
+          where: { id: storyboardId },
+          data: { status: 'processing' },
+        })
+        const err = new Error(`ASYNC_TASK:${parsed.taskId}`)
+        err.name = 'AsyncTaskError'
+        throw err
       }
 
       await db.storyboard.update({
@@ -938,7 +950,7 @@ export const aiClient = {
     adapter: import('@/lib/adapters/video').VideoProviderAdapter,
     config: { baseUrl: string; apiKey: string; model: string },
     taskId: string,
-    maxPolls = 300,
+    maxPolls = 36,
     interval = 10000
   ): Promise<string> {
     const pollReq = adapter.buildPollRequest(config, taskId)
