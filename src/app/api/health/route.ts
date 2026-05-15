@@ -73,6 +73,7 @@ export async function GET() {
     diagnostics.aiProviderVars = {
       NVIDIA_API_KEY: !!process.env.NVIDIA_API_KEY,
       OPENAI_API_KEY: !!process.env.OPENAI_API_KEY,
+      OPENROUTER_API_KEY: !!process.env.OPENROUTER_API_KEY,
       SILICONFLOW_API_KEY: !!process.env.SILICONFLOW_API_KEY,
       DEEPSEEK_API_KEY: !!process.env.DEEPSEEK_API_KEY,
       STABILITY_API_KEY: !!process.env.STABILITY_API_KEY,

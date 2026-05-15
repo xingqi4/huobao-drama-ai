@@ -613,6 +613,67 @@ export async function setActiveProvider(category: AiCategory, provider: string):
   })
 }
 
+/**
+ * Auto-initialize default providers from environment variables.
+ * Called on first deployment or when no providers are configured.
+ * Only activates providers that have API keys available (from DB or env vars).
+ */
+export async function autoInitProviders(): Promise<string[]> {
+  const initialized: string[] = []
+
+  // Check if any LLM provider is already active in DB
+  const activeLlm = await db.aiProvider.findFirst({
+    where: { category: 'llm', isActive: true },
+  })
+
+  // If no LLM is active, auto-configure OpenRouter from env var
+  if (!activeLlm) {
+    const openrouterKey = process.env.OPENROUTER_API_KEY || ''
+    const preset = PROVIDER_PRESETS.llm.find((p) => p.provider === 'openrouter')
+
+    if (preset && openrouterKey) {
+      await saveProviderConfig({
+        category: 'llm',
+        provider: 'openrouter',
+        name: preset.name,
+        apiKey: openrouterKey,
+        baseUrl: preset.defaultBaseUrl,
+        model: preset.defaultModel,
+        isActive: true,
+      })
+      initialized.push(`llm:openrouter (${preset.name})`)
+    }
+  }
+
+  // Auto-init other categories if no active provider exists and env keys are set
+  const otherCategories: AiCategory[] = ['image', 'video', 'tts']
+  for (const cat of otherCategories) {
+    const activeCat = await db.aiProvider.findFirst({
+      where: { category: cat, isActive: true },
+    })
+    if (activeCat) continue
+
+    // Check each preset for this category
+    for (const preset of PROVIDER_PRESETS[cat]) {
+      if (preset.envKey && process.env[preset.envKey]) {
+        await saveProviderConfig({
+          category: cat,
+          provider: preset.provider,
+          name: preset.name,
+          apiKey: process.env[preset.envKey]!,
+          baseUrl: preset.defaultBaseUrl,
+          model: preset.defaultModel,
+          isActive: true,
+        })
+        initialized.push(`${cat}:${preset.provider} (${preset.name})`)
+        break // Only activate the first one with an env key
+      }
+    }
+  }
+
+  return initialized
+}
+
 // ============================================================
 // AI Client — unified interface with multi-provider support
 // ============================================================

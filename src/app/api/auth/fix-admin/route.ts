@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { db } from '@/lib/db'
+import { autoInitProviders } from '@/lib/ai-config'
 
 // ============================================================
 // POST /api/auth/fix-admin — Ensure admin account exists with correct role
 // Called via secret key to fix admin account on Vercel
+// Also auto-initializes default AI providers from environment variables
 // ============================================================
 
 export async function POST(request: NextRequest) {
@@ -43,10 +45,15 @@ export async function POST(request: NextRequest) {
           isActive: true,
         },
       })
+
+      // Auto-initialize AI providers from environment variables
+      const initialized = await autoInitProviders()
+
       return NextResponse.json({
         action: 'updated',
         message: `用户 ${adminEmail} 已升级为管理员`,
         user: updated,
+        providersInitialized: initialized.length > 0 ? initialized : undefined,
       })
     }
 
@@ -68,10 +75,14 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    // Auto-initialize AI providers from environment variables
+    const initialized = await autoInitProviders()
+
     return NextResponse.json({
       action: 'created',
       message: `管理员 ${adminEmail} 创建成功`,
       user: admin,
+      providersInitialized: initialized.length > 0 ? initialized : undefined,
     })
   } catch (error: any) {
     console.error('[auth/fix-admin] Error:', error)
