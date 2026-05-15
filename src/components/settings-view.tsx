@@ -283,6 +283,14 @@ function ProviderCard({
   const [model, setModel] = useState(provider.model ?? '')
   const [showKey, setShowKey] = useState(false)
   const [localSaving, setLocalSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{
+    success: boolean
+    provider?: string
+    model?: string
+    error?: string
+    responsePreview?: string
+  } | null>(null)
 
   // Sync local state when provider data changes
   useEffect(() => {
@@ -328,6 +336,32 @@ function ProviderCard({
   }
 
   const isSaving = saving || localSaving
+
+  const handleTest = async () => {
+    setTesting(true)
+    setTestResult(null)
+    try {
+      // Use current local values (not saved yet) for testing
+      const effectiveApiKey = apiKeyEdited ? apiKey : (isMaskedKey ? '' : apiKey)
+      const result = await api.testConnection(
+        provider.category,
+        model,
+        {
+          provider: provider.provider,
+          apiKey: effectiveApiKey || undefined,
+          baseUrl: baseUrl || undefined,
+        }
+      )
+      setTestResult(result)
+    } catch (error) {
+      setTestResult({
+        success: false,
+        error: error instanceof Error ? error.message : '测试失败',
+      })
+    } finally {
+      setTesting(false)
+    }
+  }
 
   return (
     <Card
@@ -524,9 +558,47 @@ function ProviderCard({
                   )}
                 </div>
 
-                {/* Save button — admin only */}
+                {/* Test result display */}
+                {testResult && (
+                  <div className={`flex items-start gap-2 p-2.5 rounded-md border text-xs ${
+                    testResult.success
+                      ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400'
+                      : 'border-destructive/30 bg-destructive/5 text-destructive'
+                  }`}>
+                    {testResult.success
+                      ? <CheckCircle2 className="size-3.5 flex-shrink-0 mt-0.5" />
+                      : <XCircle className="size-3.5 flex-shrink-0 mt-0.5" />
+                    }
+                    <div className="flex-1 min-w-0">
+                      <span className="font-medium">{testResult.success ? '连接成功' : '连接失败'}</span>
+                      {testResult.model && <span className="text-muted-foreground ml-1">· {testResult.model}</span>}
+                      {testResult.responsePreview && (
+                        <p className="text-muted-foreground truncate mt-0.5">响应: {testResult.responsePreview}</p>
+                      )}
+                      {testResult.error && (
+                        <p className="break-all mt-0.5">{testResult.error}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Action buttons — admin only */}
                 {isAdmin && (
-                <div className="flex justify-end pt-1">
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleTest}
+                    disabled={testing || isSaving || !hasApiKey}
+                    className="gap-1.5"
+                  >
+                    {testing ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Wifi className="size-3.5" />
+                    )}
+                    测试连接
+                  </Button>
                   <Button
                     size="sm"
                     onClick={handleSave}
@@ -1106,39 +1178,64 @@ export function SettingsView() {
 
   // Handle test connection
   const handleTestConnection = useCallback(
-    async (category: AiCategory) => {
-      setTestingCategory(category)
-      setTestResults((prev) => ({ ...prev, [category]: null }))
-      try {
-        // Get the model from the currently active provider for this category
-        const activeProvider = providersData[category]?.find((p) => p.isActive)
-        const result = await api.ai.testConnection(category, activeProvider?.model)
-        setTestResults((prev) => ({ ...prev, [category]: result }))
-        if (result.success) {
-          toast({
-            title: '连接成功',
-            description: result.model ? `模型: ${result.model}` : undefined,
-          })
-        } else {
+    async (
+      category: AiCategory,
+      provider?: string,
+      apiKey?: string,
+      baseUrl?: string,
+      model?: string
+    ) => {
+      // If called from CategoryPanel's global test button (no provider specified)
+      if (!provider) {
+        setTestingCategory(category)
+        setTestResults((prev) => ({ ...prev, [category]: null }))
+        try {
+          const activeProvider = providersData[category]?.find((p) => p.isActive)
+          const result = await api.testConnection(category, activeProvider?.model)
+          setTestResults((prev) => ({ ...prev, [category]: result }))
+          if (result.success) {
+            toast({
+              title: '连接成功',
+              description: result.model ? `模型: ${result.model}` : undefined,
+            })
+          } else {
+            toast({
+              title: '连接失败',
+              description: result.error,
+              variant: 'destructive',
+            })
+          }
+        } catch (err) {
+          const errorResult = {
+            success: false as const,
+            error: String(err),
+          }
+          setTestResults((prev) => ({ ...prev, [category]: errorResult }))
           toast({
             title: '连接失败',
-            description: result.error,
+            description: String(err),
             variant: 'destructive',
           })
+        } finally {
+          setTestingCategory(null)
         }
+        return null
+      }
+
+      // Called from ProviderCard's test button — the ProviderCard handles its own result display
+      // We just proxy to the API here
+      try {
+        const result = await api.testConnection(category, model, {
+          provider,
+          apiKey,
+          baseUrl,
+        })
+        return result
       } catch (err) {
-        const errorResult = {
+        return {
           success: false as const,
           error: String(err),
         }
-        setTestResults((prev) => ({ ...prev, [category]: errorResult }))
-        toast({
-          title: '连接失败',
-          description: String(err),
-          variant: 'destructive',
-        })
-      } finally {
-        setTestingCategory(null)
       }
     },
     [toast, providersData]
@@ -1232,7 +1329,7 @@ export function SettingsView() {
                     presets={presetsData[category] ?? []}
                     onSaveProvider={handleSaveProvider}
                     onSetActive={handleSetActive}
-                    onTestConnection={handleTestConnection}
+                    onTestConnection={(cat: AiCategory) => handleTestConnection(cat)}
                     testResult={testResults[category]}
                     testing={testingCategory === category}
                     savingProvider={savingProvider}

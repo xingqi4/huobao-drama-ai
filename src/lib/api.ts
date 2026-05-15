@@ -523,7 +523,11 @@ export const api = {
         body: JSON.stringify({ category, taskId }),
       }),
 
-    testConnection: (category?: AiCategory, model?: string) =>
+    testConnection: (category?: AiCategory, model?: string, providerOpts?: {
+      provider?: string
+      apiKey?: string
+      baseUrl?: string
+    }) =>
       request<{
         success: boolean
         provider?: string
@@ -533,7 +537,11 @@ export const api = {
       }>('/api/ai/test-connection', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ category: category || 'llm', model }),
+        body: JSON.stringify({
+          category: category || 'llm',
+          model,
+          ...(providerOpts || {}),
+        }),
       }),
 
     // Get active models for each AI category
