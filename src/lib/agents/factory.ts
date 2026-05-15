@@ -150,12 +150,19 @@ async function callLLMWithTools(
     ? provider.baseUrl
     : `${provider.baseUrl.replace(/\/$/, '')}/chat/completions`
 
+  // Build headers — OpenRouter requires additional headers for app identification
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${provider.apiKey}`,
+    'Content-Type': 'application/json',
+  }
+  if (provider.provider === 'openrouter') {
+    headers['HTTP-Referer'] = 'https://huobao-drama-ai.vercel.app'
+    headers['X-Title'] = 'AI短剧创作平台'
+  }
+
   const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${provider.apiKey}`,
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify(body),
   })
 

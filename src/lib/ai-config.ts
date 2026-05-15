@@ -119,6 +119,42 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
       ],
     },
     {
+      provider: 'openrouter',
+      name: 'OpenRouter',
+      defaultBaseUrl: 'https://openrouter.ai/api/v1',
+      defaultModel: 'deepseek/deepseek-chat-v3-0324:free',
+      description: 'OpenRouter — 聚合 300+ 模型，支持免费模型，一个 Key 访问所有主流 LLM',
+      envKey: 'OPENROUTER_API_KEY',
+      availableModels: [
+        // ── 免费模型 ──
+        { id: 'deepseek/deepseek-chat-v3-0324:free', name: 'DeepSeek V3 (免费)', tags: ['免费', '推荐'] },
+        { id: 'deepseek/deepseek-r1:free', name: 'DeepSeek R1 (免费)', tags: ['免费', '推理'] },
+        { id: 'qwen/qwen3-235b-a22b:free', name: 'Qwen3 235B (免费)', tags: ['免费'] },
+        { id: 'qwen/qwen3-30b-a3b:free', name: 'Qwen3 30B (免费)', tags: ['免费', '快速'] },
+        { id: 'google/gemma-3-27b-it:free', name: 'Gemma 3 27B (免费)', tags: ['免费'] },
+        { id: 'meta-llama/llama-4-maverick:free', name: 'Llama 4 Maverick (免费)', tags: ['免费'] },
+        { id: 'mistralai/mistral-small-3.1-24b-instruct:free', name: 'Mistral Small 3.1 (免费)', tags: ['免费'] },
+        // ── 付费 - 高端 ──
+        { id: 'anthropic/claude-sonnet-4', name: 'Claude Sonnet 4', tags: ['推荐', '最新'] },
+        { id: 'anthropic/claude-opus-4', name: 'Claude Opus 4', tags: ['推理', '最强'] },
+        { id: 'openai/gpt-4.1', name: 'GPT-4.1', tags: ['最新'] },
+        { id: 'openai/o3', name: 'o3', tags: ['推理'] },
+        { id: 'openai/o4-mini', name: 'o4-mini', tags: ['推理', '经济'] },
+        { id: 'google/gemini-2.5-pro-preview', name: 'Gemini 2.5 Pro', tags: ['推荐', '最新'] },
+        { id: 'google/gemini-2.5-flash-preview', name: 'Gemini 2.5 Flash', tags: ['快速'] },
+        // ── 付费 - 国产 ──
+        { id: 'deepseek/deepseek-chat-v3-0324', name: 'DeepSeek V3', tags: ['经济'] },
+        { id: 'deepseek/deepseek-r1', name: 'DeepSeek R1', tags: ['推理'] },
+        { id: 'qwen/qwen3-235b-a22b', name: 'Qwen3 235B', tags: ['经济'] },
+        { id: 'qwen/qwen3-30b-a3b', name: 'Qwen3 30B', tags: ['经济', '快速'] },
+        // ── 付费 - 开源 ──
+        { id: 'meta-llama/llama-4-maverick', name: 'Llama 4 Maverick', tags: ['最新'] },
+        { id: 'meta-llama/llama-3.3-70b-instruct', name: 'Llama 3.3 70B' },
+        { id: 'mistralai/mistral-large-2411', name: 'Mistral Large' },
+        { id: 'mistralai/mistral-small-3.1-24b-instruct', name: 'Mistral Small 3.1', tags: ['快速'] },
+      ],
+    },
+    {
       provider: 'custom',
       name: '自定义 OpenAI 兼容',
       defaultBaseUrl: '',
@@ -608,12 +644,19 @@ export const aiClient = {
       ? provider.baseUrl
       : `${provider.baseUrl.replace(/\/$/, '')}/chat/completions`
 
+    // Build headers — OpenRouter requires additional headers for app identification
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${provider.apiKey}`,
+      'Content-Type': 'application/json',
+    }
+    if (provider.provider === 'openrouter') {
+      headers['HTTP-Referer'] = 'https://huobao-drama-ai.vercel.app'
+      headers['X-Title'] = 'AI短剧创作平台'
+    }
+
     const res = await fetch(url, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${provider.apiKey}`,
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(body),
     })
 
