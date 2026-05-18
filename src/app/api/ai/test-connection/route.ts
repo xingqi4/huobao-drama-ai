@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { aiClient, getActiveProvider, PROVIDER_PRESETS, type AiCategory } from '@/lib/ai-config'
 import { requireAuth } from '@/lib/auth-helpers'
+import { db } from '@/lib/db'
 
 // POST /api/ai/test-connection - Test AI provider connectivity
 // Body: { category: AiCategory, provider?: string, apiKey?: string, baseUrl?: string, model?: string }
@@ -22,24 +23,33 @@ export async function POST(request: NextRequest) {
     if (testProvider) {
       const preset = PROVIDER_PRESETS[category]?.find((p) => p.provider === testProvider)
 
-      // Build the provider config for testing
-      // Use provided values first, then fall back to active provider, then preset defaults
-      const activeProvider = await getActiveProvider(category)
-
       let apiKey = testApiKey || ''
       let baseUrl = testBaseUrl || preset?.defaultBaseUrl || ''
       let model = testModel || preset?.defaultModel || ''
 
-      // If no apiKey provided, try to get from active provider (if same provider) or env
+      // If no apiKey provided, fall back to DB → active provider → env vars
       if (!apiKey) {
-        if (activeProvider?.provider === testProvider) {
-          apiKey = activeProvider.apiKey
-          if (!baseUrl) baseUrl = activeProvider.baseUrl
-          if (!model) model = activeProvider.model
-        } else if (preset?.envKey) {
-          apiKey = process.env[preset.envKey]
-            || (testProvider === 'openrouter' ? process.env['OpenRouter_API_KEY'] : '')
-            || ''
+        // 1. Try DB first (handles masked key scenario)
+        const dbProvider = await db.aiProvider.findUnique({
+          where: { category_provider: { category, provider: testProvider } },
+        })
+        if (dbProvider?.apiKey) {
+          apiKey = dbProvider.apiKey
+          if (!baseUrl) baseUrl = dbProvider.baseUrl || ''
+          if (!model) model = dbProvider.model || ''
+        } else {
+          // 2. Try active provider (if same provider)
+          const activeProvider = await getActiveProvider(category)
+          if (activeProvider?.provider === testProvider) {
+            apiKey = activeProvider.apiKey
+            if (!baseUrl) baseUrl = activeProvider.baseUrl
+            if (!model) model = activeProvider.model
+          } else if (preset?.envKey) {
+            // 3. Try env vars
+            apiKey = process.env[preset.envKey]
+              || (testProvider === 'openrouter' ? process.env['OpenRouter_API_KEY'] : '')
+              || ''
+          }
         }
       }
 
@@ -54,6 +64,7 @@ export async function POST(request: NextRequest) {
 
       // Test LLM provider directly
       if (category === 'llm') {
+        const startTime = Date.now()
         try {
           const url = baseUrl.endsWith('/chat/completions')
             ? baseUrl
@@ -77,6 +88,7 @@ export async function POST(request: NextRequest) {
               max_tokens: 10,
               temperature: 0,
             }),
+            signal: AbortSignal.timeout(30000),
           })
 
           if (!res.ok) {
@@ -86,6 +98,7 @@ export async function POST(request: NextRequest) {
               provider: testProvider,
               model,
               error: `API 返回 ${res.status}: ${text.slice(0, 200)}`,
+              latency: Date.now() - startTime,
             })
           }
 
@@ -96,6 +109,7 @@ export async function POST(request: NextRequest) {
             provider: testProvider,
             model,
             responsePreview: content.slice(0, 100),
+            latency: Date.now() - startTime,
           })
         } catch (error) {
           return NextResponse.json({
@@ -103,6 +117,7 @@ export async function POST(request: NextRequest) {
             provider: testProvider,
             model,
             error: error instanceof Error ? error.message : '连接失败',
+            latency: Date.now() - startTime,
           })
         }
       }

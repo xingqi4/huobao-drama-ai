@@ -290,6 +290,7 @@ function ProviderCard({
     model?: string
     error?: string
     responsePreview?: string
+    latency?: number
   } | null>(null)
 
   // Sync local state when provider data changes
@@ -572,6 +573,7 @@ function ProviderCard({
                     <div className="flex-1 min-w-0">
                       <span className="font-medium">{testResult.success ? '连接成功' : '连接失败'}</span>
                       {testResult.model && <span className="text-muted-foreground ml-1">· {testResult.model}</span>}
+                      {testResult.latency && <span className="text-muted-foreground ml-1">{testResult.latency}ms</span>}
                       {testResult.responsePreview && (
                         <p className="text-muted-foreground truncate mt-0.5">响应: {testResult.responsePreview}</p>
                       )}

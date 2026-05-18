@@ -534,6 +534,7 @@ export const api = {
         model?: string
         error?: string
         responsePreview?: string
+        latency?: number
       }>('/api/ai/test-connection', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
