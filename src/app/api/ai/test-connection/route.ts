@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
           }
           if (testProvider === 'openrouter') {
             headers['HTTP-Referer'] = 'https://huobao-drama-ai.vercel.app'
-            headers['X-Title'] = 'AI短剧创作平台'
+            headers['X-Title'] = 'AI Drama Creator'
           }
 
           const res = await fetch(url, {
@@ -178,7 +178,7 @@ export async function POST(request: NextRequest) {
           }
           if (testProvider === 'openrouter') {
             headers['HTTP-Referer'] = 'https://huobao-drama-ai.vercel.app'
-            headers['X-Title'] = 'AI短剧创作平台'
+            headers['X-Title'] = 'AI Drama Creator'
           }
           const res = await fetch(checkUrl, { method: 'GET', headers, signal: AbortSignal.timeout(10000) }).catch(() => null)
 

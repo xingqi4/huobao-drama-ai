@@ -157,7 +157,7 @@ async function callLLMWithTools(
   }
   if (provider.provider === 'openrouter') {
     headers['HTTP-Referer'] = 'https://huobao-drama-ai.vercel.app'
-    headers['X-Title'] = 'AI短剧创作平台'
+    headers['X-Title'] = 'AI Drama Creator'
   }
 
   const res = await fetch(url, {
