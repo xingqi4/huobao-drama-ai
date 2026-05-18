@@ -344,7 +344,7 @@ function ProviderCard({
     try {
       // Use current local values (not saved yet) for testing
       const effectiveApiKey = apiKeyEdited ? apiKey : (isMaskedKey ? '' : apiKey)
-      const result = await api.testConnection(
+      const result = await api.ai.testConnection(
         provider.category,
         model,
         {
@@ -1193,7 +1193,7 @@ export function SettingsView() {
         setTestResults((prev) => ({ ...prev, [category]: null }))
         try {
           const activeProvider = providersData[category]?.find((p) => p.isActive)
-          const result = await api.testConnection(category, activeProvider?.model)
+          const result = await api.ai.testConnection(category, activeProvider?.model)
           setTestResults((prev) => ({ ...prev, [category]: result }))
           if (result.success) {
             toast({
@@ -1227,7 +1227,7 @@ export function SettingsView() {
       // Called from ProviderCard's test button — the ProviderCard handles its own result display
       // We just proxy to the API here
       try {
-        const result = await api.testConnection(category, model, {
+        const result = await api.ai.testConnection(category, model, {
           provider,
           apiKey,
           baseUrl,
