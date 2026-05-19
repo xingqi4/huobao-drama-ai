@@ -303,3 +303,49 @@ Stage Summary:
 - Deployment triggered via Vercel CLI with new token
 - GitHub token: [REDACTED]
 - Vercel token: [REDACTED]
+
+---
+Task ID: v0.6-iteration
+Agent: Main Agent
+Task: Implement v0.6 iteration - episode config lock, grid UI, FFmpeg compose UI, reference images
+
+Work Log:
+- Updated README with v0.5 completion status and v0.6 roadmap
+- Updated deployment credential with new Vercel token
+- Implemented P2: Episode-level AI Config Lock
+  - Added lockedConfig field to Episode model in prisma schema
+  - Updated episode PATCH API to handle lockedConfig
+  - Added LockedConfig interface and store actions to store.ts
+  - Added disabled prop to model-selector.tsx (amber tint when locked)
+  - Added Lock/LockOpen toggle in episode-workspace header
+  - Toast notifications on lock/unlock
+- Implemented P2: Grid Image UI Integration
+  - Added grid.generate/split/status methods to api.ts
+  - Added GridMode, GridConfig, GridGenerationState types
+  - Added grid state and handleGridGenerate handler to episode-workspace
+  - Added "宫格图生成" button with Grid3X3 icon in storyboard toolbar
+  - Added Grid Configuration Dialog (mode selector, size selector, summary)
+  - Progress tracking during generation/splitting
+- Implemented P2: Server-side FFmpeg Compose UI
+  - Added ffmpegAvailable, merging, mergeStatus state to episode-workspace
+  - Added fetchMergeStatus to check FFmpeg availability
+  - Added handleServerCompose with auto-fallback to client-side
+  - Added handleServerMerge for episode-level video merging
+  - Updated production-panel with FFmpeg badge, merge button, merge result banner
+  - Compose button shows mode (FFmpeg/WebM)
+- Implemented P2: Storyboard Reference Images UI
+  - Added reference images upload/display/delete UI in storyboard detail panel
+  - Multiple image upload support with FileReader
+  - Hover-to-delete with Trash2 icon
+  - Grid display with 3 columns
+- Fixed lucide-react Reference icon (doesn't exist) → Bookmark
+- Cleaned worklog.md of exposed credentials
+- Used git filter-branch to remove tokens from git history
+- Build passed, committed and pushed to GitHub
+- Deployed to Vercel production (Ready)
+
+Stage Summary:
+- v0.6 iteration with 4 major features implemented
+- 11 files changed, +977/-50 lines
+- All P2 items completed: config lock, grid UI, FFmpeg compose UI, reference images
+- Deployment live at huobao-drama-ai.vercel.app
