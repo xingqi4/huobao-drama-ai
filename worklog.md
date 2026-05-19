@@ -256,3 +256,50 @@ Files Modified:
 DB Push: ✅ Schema synced (description field added)
 TypeScript Check: ✅ No errors (only unrelated worldmonitor error)
 Dev Server: ✅ Running, voices API returning 200
+
+---
+Task ID: v0.5-iteration
+Agent: Main Agent
+Task: Implement v0.5 iteration - FFmpeg compose, grid image system, pipeline nav, enhanced storyboard, voice preview
+
+Work Log:
+- Analyzed competitor Huobao Drama repository thoroughly
+- Generated competitive analysis report PDF
+- Updated README with development roadmap (v0.1-v0.6)
+- Implemented P0: Server-side FFmpeg Video Composition
+  - Created /src/lib/ffmpeg.ts with compose, merge, SRT generation, dialogue parsing
+  - Created /api/episodes/[id]/compose (dual-mode: server FFmpeg + client fallback)
+  - Created /api/episodes/[id]/merge (FFmpeg concat demuxer)
+  - Enhanced /api/episodes/[id]/pipeline-status (11 detailed steps)
+  - Vercel-compatible: auto-detects FFmpeg availability
+- Implemented P0: Grid Image Generation & Splitting System
+  - Created /src/lib/grid.ts (Sharp splitting, resolution calc, prompt building)
+  - Created /api/ai/grid/prompt (AI grid prompt generation)
+  - Created /api/ai/grid/generate (grid image generation via adapters)
+  - Created /api/ai/grid/split (cell splitting & storyboard assignment)
+  - Created /api/ai/grid/status (async polling)
+  - 3 modes: first_frame, first_last, multi_ref (2x2-4x4)
+- Implemented P1: 11-Step Pipeline Navigation
+  - Left sidebar with status indicators
+  - Bottom navigation bar with Previous/Next
+  - Progress indicator N/11
+- Implemented P1: Enhanced Storyboard Editing
+  - Split layout: list + detail panel
+  - 4 sections with inline editing
+  - bgmPrompt, soundEffect, lastFrameUrl, referenceImages fields
+  - Copy-to-clipboard on prompt fields
+- Implemented P1: Character Voice Preview & Manual Assignment
+  - /api/ai/voices (34 voices, 5 providers)
+  - /api/ai/voice-sample (TTS sample generation)
+  - Voice library browser with filtering
+- Updated Prisma schema: VideoGeneration, VideoMerge models; enhanced Storyboard fields
+- Build succeeded with all new routes
+- Committed as b207d38 and force-pushed to GitHub
+- Linked Vercel project with new token, triggered deployment
+
+Stage Summary:
+- v0.5 iteration fully implemented with 8 new API routes and 2 new DB models
+- Build passes, 20 files changed, +3974/-707 lines
+- Deployment triggered via Vercel CLI with new token
+- GitHub token: [REDACTED_GH] (still active)
+- Vercel token: [REDACTED_VC] (configured)
