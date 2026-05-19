@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore } from '@/lib/store'
 import { api, type ProviderConfig, type AiCategory, type ProviderPreset, type ModelOption } from '@/lib/api'
+import { PROVIDER_PRESETS } from '@/lib/ai-config'
 import { useToast } from '@/hooks/use-toast'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -656,9 +657,19 @@ function UserProviderCard({
   const [model, setModel] = useState(provider?.model ?? preset?.defaultModel ?? '')
   const [showKey, setShowKey] = useState(false)
   const [localSaving, setLocalSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{
+    success: boolean
+    provider?: string
+    model?: string
+    error?: string
+    responsePreview?: string
+    latency?: number
+  } | null>(null)
 
   const hasConfig = Boolean(provider?.apiKey?.trim())
-  const category = provider?.category ?? ''
+  // Fix: derive category from preset when provider is null
+  const category = provider?.category ?? (preset ? (Object.entries(PROVIDER_PRESETS).find(([, presets]) => presets.some(p => p.provider === preset.provider))?.[0] ?? '') : '')
   const providerName = preset?.name ?? provider?.provider ?? ''
 
   // Sync when provider data changes
@@ -696,6 +707,30 @@ function UserProviderCard({
   }
 
   const isSaving = saving || localSaving
+
+  const handleTest = async () => {
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const result = await api.ai.testConnection(
+        category as AiCategory,
+        model,
+        {
+          provider: preset?.provider ?? provider?.provider ?? '',
+          apiKey: apiKey || undefined,
+          baseUrl: baseUrl || undefined,
+        }
+      )
+      setTestResult(result)
+    } catch (error) {
+      setTestResult({
+        success: false,
+        error: error instanceof Error ? error.message : '测试失败',
+      })
+    } finally {
+      setTesting(false)
+    }
+  }
 
   return (
     <Card
@@ -867,6 +902,31 @@ function UserProviderCard({
                   )}
                 </div>
 
+                {/* Test result display */}
+                {testResult && (
+                  <div className={`flex items-start gap-2 p-2.5 rounded-md border text-xs ${
+                    testResult.success
+                      ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400'
+                      : 'border-destructive/30 bg-destructive/5 text-destructive'
+                  }`}>
+                    {testResult.success
+                      ? <CheckCircle2 className="size-3.5 flex-shrink-0 mt-0.5" />
+                      : <XCircle className="size-3.5 flex-shrink-0 mt-0.5" />
+                    }
+                    <div className="flex-1 min-w-0">
+                      <span className="font-medium">{testResult.success ? '连接成功' : '连接失败'}</span>
+                      {testResult.model && <span className="text-muted-foreground ml-1">· {testResult.model}</span>}
+                      {testResult.latency && <span className="text-muted-foreground ml-1">{testResult.latency}ms</span>}
+                      {testResult.responsePreview && (
+                        <p className="text-muted-foreground truncate mt-0.5">响应: {testResult.responsePreview}</p>
+                      )}
+                      {testResult.error && (
+                        <p className="break-all mt-0.5">{testResult.error}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Action buttons */}
                 <div className="flex items-center justify-between pt-1">
                   {hasConfig && (
@@ -882,6 +942,20 @@ function UserProviderCard({
                     </Button>
                   )}
                   <div className="flex gap-2 ml-auto">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleTest}
+                      disabled={testing || isSaving || !apiKey.trim()}
+                      className="gap-1.5"
+                    >
+                      {testing ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <Wifi className="size-3.5" />
+                      )}
+                      测试连接
+                    </Button>
                     <Button
                       size="sm"
                       onClick={handleSave}
@@ -1044,19 +1118,18 @@ function CategoryPanel({
         })}
       </RadioGroup>
 
-      {/* User's own key section — always visible for non-admin */}
-      {!isAdmin && (
-        <div className="space-y-3">
-          <div className="flex items-center gap-2 pt-2">
-            <User className="size-4 text-amber-500" />
-            <h3 className="text-sm font-semibold">我的 API Key</h3>
-            <Badge variant="secondary" className="text-[9px] bg-amber-500/10 text-amber-600 border-amber-500/20">
-              优先使用
-            </Badge>
-          </div>
-          <p className="text-[11px] text-muted-foreground -mt-1">
-            配置你自己的 API Key，将优先于平台共享 Key 使用。未配置时自动使用平台共享 Key。
-          </p>
+      {/* User's own key section — visible for all users (admin included) */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 pt-2">
+          <User className="size-4 text-amber-500" />
+          <h3 className="text-sm font-semibold">我的 API Key</h3>
+          <Badge variant="secondary" className="text-[9px] bg-amber-500/10 text-amber-600 border-amber-500/20">
+            优先使用
+          </Badge>
+        </div>
+        <p className="text-[11px] text-muted-foreground -mt-1">
+          配置你自己的 API Key，将优先于平台共享 Key 使用。未配置时自动使用平台共享 Key。
+        </p>
 
           <RadioGroup
             value={userActiveProvider?.provider ?? ''}
@@ -1080,8 +1153,7 @@ function CategoryPanel({
               )
             })}
           </RadioGroup>
-        </div>
-      )}
+      </div>
 
       {/* Helpful hint */}
       <div className="flex items-start gap-2 p-3 rounded-lg bg-muted/20 border border-border/30">
@@ -1538,15 +1610,37 @@ export function SettingsView() {
   const handleSetActiveUserProvider = useCallback(
     async (category: string, provider: string) => {
       try {
-        // Deactivate current active user providers in this category, then activate this one
-        const result = await api.userProvider.save({
-          category,
-          provider,
-          apiKey: '', // Will be filled from existing or will need the user to provide
-          isActive: true,
-        })
-        setUserProvidersData(result.providers as Record<string, ProviderConfig[]>)
-        toast({ title: '已切换我的供应商' })
+        // Check if the user already has a config for this provider
+        const existingProvider = userProvidersData[category]?.find((p) => p.provider === provider)
+        if (existingProvider?.apiKey) {
+          // User has a config with a key, just activate it
+          const result = await api.userProvider.save({
+            category,
+            provider,
+            apiKey: existingProvider.apiKey,
+            baseUrl: existingProvider.baseUrl,
+            model: existingProvider.model,
+            isActive: true,
+          })
+          setUserProvidersData(result.providers as Record<string, ProviderConfig[]>)
+          toast({ title: '已切换我的供应商' })
+        } else {
+          // No config yet, just toggle active state — user needs to input key first
+          // Still deactivate other user providers in this category
+          const currentActive = userProvidersData[category]?.find((p) => p.isActive)
+          if (currentActive) {
+            const result = await api.userProvider.save({
+              category,
+              provider: currentActive.provider,
+              apiKey: currentActive.apiKey,
+              baseUrl: currentActive.baseUrl,
+              model: currentActive.model,
+              isActive: false,
+            })
+            setUserProvidersData(result.providers as Record<string, ProviderConfig[]>)
+          }
+          toast({ title: '请先输入 API Key 并保存', description: '展开供应商卡片，输入你的 API Key 后点击保存' })
+        }
       } catch (err) {
         toast({
           title: '切换失败',
@@ -1555,7 +1649,7 @@ export function SettingsView() {
         })
       }
     },
-    [toast]
+    [toast, userProvidersData]
   )
 
   // Handle saving agent config
