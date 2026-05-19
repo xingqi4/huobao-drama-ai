@@ -160,17 +160,14 @@ export const api = {
         if (!r.ok) throw new Error(`Delete episode failed: ${r.status}`)
       }),
 
-    // Pipeline status - detailed progress for each production step
+    // Pipeline status - detailed progress for each production step (11-step format)
     pipelineStatus: (episodeId: string) =>
       request<{
-        scriptRewrite: { status: string; hasContent: boolean }
-        extractCharacters: { status: string; count: number }
-        extractScenes: { status: string; count: number }
-        generateImages: { status: string; completed: number; total: number }
-        generateVideos: { status: string; completed: number; total: number }
-        generateTts: { status: string; completed: number; total: number }
-        composeShots: { status: string; completed: number; total: number }
-        mergeEpisode: { status: string; mergedUrl: string | null }
+        pipeline: Record<string, { status: 'pending' | 'active' | 'completed'; completed: number; total: number }>
+        steps: string[]
+        completedSteps: number
+        totalSteps: number
+        progressPercent: number
       }>(`/api/episodes/${episodeId}/pipeline-status`),
 
     // Get compose data for client-side compositing
@@ -509,6 +506,32 @@ export const api = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ storyboardId, text, voiceId }),
+      }),
+
+    // List available voices from TTS providers
+    listVoices: (provider?: string, language?: string) => {
+      const params = new URLSearchParams()
+      if (provider) params.set('provider', provider)
+      if (language) params.set('language', language)
+      const qs = params.toString()
+      return request<{
+        voices: Array<{ id: string; name: string; provider: string; language?: string; description?: string; gender?: string }>
+        activeProvider: string | null
+        activeModel: string | null
+      }>(`/api/ai/voices${qs ? `?${qs}` : ''}`)
+    },
+
+    // Generate a voice sample for a character
+    generateVoiceSample: (characterId: string, voiceId: string, text?: string) =>
+      request<{
+        audioUrl: string
+        voiceId: string
+        text: string
+        characterName: string | null
+      }>('/api/ai/voice-sample', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ characterId, voiceId, text }),
       }),
 
     pollStatus: (category: 'image' | 'video', taskId: string) =>

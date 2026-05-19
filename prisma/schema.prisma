@@ -3,10 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider          = "postgresql"
-  url               = env("DATABASE_URL")
-  directUrl         = env("DIRECT_URL")
-  relationMode      = "prisma"
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
 }
 
 // ============ User (Auth) ============
@@ -108,27 +106,32 @@ model Scene {
 
 // ============ Storyboard (Shot) ============
 model Storyboard {
-  id             String   @id @default(cuid())
-  episodeId      String
-  shotNumber     Int
-  title          String   @default("")
-  shotType       String   @default("medium")
-  cameraAngle    String   @default("eye-level")
-  cameraMovement String   @default("static")
-  action         String   @default("")
-  dialogue       String?
-  dialogueChar   String?
-  duration       Float    @default(3.0)
-  imagePrompt    String?
-  videoPrompt    String?
-  atmosphere     String?
-  firstFrameUrl  String?
-  videoUrl       String?
-  ttsAudioUrl    String?
-  composedUrl    String?
-  status         String   @default("pending")
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id              String   @id @default(cuid())
+  episodeId       String
+  shotNumber      Int
+  title           String   @default("")
+  shotType        String   @default("medium")
+  cameraAngle     String   @default("eye-level")
+  cameraMovement  String   @default("static")
+  action          String   @default("")
+  description     String   @default("")  // Visual description for the shot
+  dialogue        String?
+  dialogueChar    String?
+  duration        Float    @default(3.0)
+  imagePrompt     String?
+  videoPrompt     String?
+  atmosphere      String?
+  firstFrameUrl   String?
+  lastFrameUrl    String?
+  videoUrl        String?
+  ttsAudioUrl     String?
+  composedUrl     String?
+  bgmPrompt       String?
+  soundEffect     String?
+  referenceImages String?  // JSON array of reference image URLs
+  status          String   @default("pending")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
 }
@@ -234,6 +237,40 @@ model AgentConfig {
   temperature Float    @default(0.7)
   maxTokens   Int      @default(4096)
   isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ============ Video Generation Tracking ============
+model VideoGeneration {
+  id              String   @id @default(cuid())
+  storyboardId    String?
+  dramaId         String?
+  provider        String   @default("")
+  model           String   @default("")
+  prompt          String   @default("")
+  referenceMode   String?  // "first_frame", "first_last", "text_only"
+  firstFrameUrl   String?
+  lastFrameUrl    String?
+  duration        Int      @default(5)
+  aspectRatio     String   @default("16:9")
+  taskId          String?  // Async task ID for polling
+  videoUrl        String?
+  status          String   @default("pending") // pending, processing, completed, failed
+  errorMsg        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ============ Video Merge Tracking ============
+model VideoMerge {
+  id          String   @id @default(cuid())
+  episodeId   String
+  dramaId     String?
+  status      String   @default("pending") // pending, processing, completed, failed
+  mergedUrl   String?
+  duration    Int      @default(0)
+  errorMsg    String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }

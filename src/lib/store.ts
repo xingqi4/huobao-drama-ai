@@ -84,13 +84,18 @@ export interface Storyboard {
   cameraAngle: string
   cameraMovement: string
   action: string
+  description: string
   dialogue: string | null
   dialogueChar: string | null
   duration: number
   imagePrompt: string | null
   videoPrompt: string | null
   atmosphere: string | null
+  bgmPrompt: string | null
+  soundEffect: string | null
   firstFrameUrl: string | null
+  lastFrameUrl: string | null
+  referenceImages: string | null
   videoUrl: string | null
   ttsAudioUrl: string | null
   composedUrl: string | null

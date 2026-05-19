@@ -21,6 +21,7 @@ import {
   Clapperboard,
   Check,
   ChevronRight,
+  ChevronLeft,
   PanelLeftClose,
   PanelLeftOpen,
   Mic,
@@ -35,8 +36,8 @@ import { StoryboardPanel } from '@/components/episode/storyboard-panel'
 import { ProductionPanel } from '@/components/episode/production-panel'
 
 // Shared types & helpers
-import type { StepKey, StepDef, UploadOptions, BatchProgress } from '@/components/episode/types'
-import { STEPS, statusBadge, panelVariants } from '@/components/episode/helpers'
+import type { StepKey, StepDef, UploadOptions, BatchProgress, PipelineStepKey, PipelineStatus, VoiceInfo } from '@/components/episode/types'
+import { STEPS, PIPELINE_STEPS, PIPELINE_TO_STEP_MAP, statusBadge, panelVariants } from '@/components/episode/helpers'
 
 // ── Main component ───────────────────────────────────────────
 
@@ -55,6 +56,7 @@ export function EpisodeWorkspace() {
   const perms = usePermissions()
 
   const [activeStep, setActiveStep] = useState<StepKey>('raw')
+  const [activePipelineStep, setActivePipelineStep] = useState<PipelineStepKey>('raw_content')
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [rawContent, setRawContent] = useState('')
   const [scriptContent, setScriptContent] = useState('')
@@ -69,6 +71,15 @@ export function EpisodeWorkspace() {
   const [generatingTts, setGeneratingTts] = useState<string | null>(null)
   const [copiedField, setCopiedField] = useState<string | null>(null)
   const [uploadingField, setUploadingField] = useState<string | null>(null)
+
+  // Pipeline status state
+  const [pipelineStatus, setPipelineStatus] = useState<PipelineStatus | null>(null)
+
+  // Voice management state
+  const [voices, setVoices] = useState<VoiceInfo[]>([])
+  const [activeTtsProvider, setActiveTtsProvider] = useState<string | null>(null)
+  const [voiceSamples, setVoiceSamples] = useState<Record<string, string>>({})
+  const [generatingSample, setGeneratingSample] = useState<string | null>(null)
 
   // Agent execution hook — manages SSE streaming with rich log rendering
   const agentExec = useAgentExecution()
@@ -123,6 +134,36 @@ export function EpisodeWorkspace() {
     fetchEpisode()
   }, [fetchEpisode])
 
+  // ── Fetch pipeline status ────────────────────────────────────
+
+  const fetchPipelineStatus = useCallback(async () => {
+    if (!selectedEpisodeId) return
+    try {
+      const status = await api.episodes.pipelineStatus(selectedEpisodeId)
+      setPipelineStatus(status)
+    } catch {
+      // Silently fail — pipeline status is not critical
+    }
+  }, [selectedEpisodeId])
+
+  useEffect(() => {
+    fetchPipelineStatus()
+  }, [fetchPipelineStatus])
+
+  // Re-fetch pipeline status when data changes
+  useEffect(() => {
+    fetchPipelineStatus()
+  }, [rawContent, scriptContent, characters, scenes, storyboards, fetchPipelineStatus])
+
+  // ── Fetch available voices ───────────────────────────────────
+
+  useEffect(() => {
+    api.ai.listVoices().then((result) => {
+      setVoices(result.voices)
+      setActiveTtsProvider(result.activeProvider)
+    }).catch(() => {})
+  }, [])
+
   // ── Step completion logic ──────────────────────────────────
 
   const isStepCompleted = useCallback(
@@ -155,6 +196,50 @@ export function EpisodeWorkspace() {
   }, 0)
   const totalSteps = STEPS.reduce((acc, s) => acc + (s.subSteps?.length ?? 1), 0)
   const progressPercent = Math.round((completedCount / totalSteps) * 100)
+
+  // ── Pipeline step status helper ────────────────────────────
+
+  const getPipelineStepStatus = useCallback(
+    (key: PipelineStepKey): 'pending' | 'active' | 'completed' => {
+      if (pipelineStatus?.pipeline?.[key]) {
+        return pipelineStatus.pipeline[key].status
+      }
+      return 'pending'
+    },
+    [pipelineStatus]
+  )
+
+  const pipelineCompletedCount = pipelineStatus?.completedSteps ?? 0
+  const pipelineTotalCount = pipelineStatus?.totalSteps ?? 11
+
+  // ── Navigate to pipeline step ──────────────────────────────
+
+  const handlePipelineStepClick = useCallback(
+    (key: PipelineStepKey) => {
+      setActivePipelineStep(key)
+      const legacyStep = PIPELINE_TO_STEP_MAP[key] as StepKey
+      setActiveStep(legacyStep)
+    },
+    []
+  )
+
+  // ── Pipeline step navigation (Prev/Next) ───────────────────
+
+  const currentPipelineIndex = PIPELINE_STEPS.findIndex((s) => s.key === activePipelineStep)
+
+  const handlePrevStep = useCallback(() => {
+    if (currentPipelineIndex > 0) {
+      const prevStep = PIPELINE_STEPS[currentPipelineIndex - 1]
+      handlePipelineStepClick(prevStep.key)
+    }
+  }, [currentPipelineIndex, handlePipelineStepClick])
+
+  const handleNextStep = useCallback(() => {
+    if (currentPipelineIndex < PIPELINE_STEPS.length - 1) {
+      const nextStep = PIPELINE_STEPS[currentPipelineIndex + 1]
+      handlePipelineStepClick(nextStep.key)
+    }
+  }, [currentPipelineIndex, handlePipelineStepClick])
 
   // ── Save raw content ───────────────────────────────────────
 
@@ -272,6 +357,64 @@ export function EpisodeWorkspace() {
     }
   }
 
+  // ── Manual voice assignment ──────────────────────────────────
+
+  const handleAssignVoice = async (characterId: string, voiceId: string) => {
+    try {
+      await fetch(`/api/dramas/${selectedDramaId}/characters`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ characterId, voiceId }),
+      })
+      toast({ title: '音色已分配' })
+      await fetchEpisode()
+    } catch (err) {
+      toast({ title: '音色分配失败', description: String(err), variant: 'destructive' })
+    }
+  }
+
+  // ── Generate voice sample ────────────────────────────────────
+
+  const handleGenerateVoiceSample = async (characterId: string, voiceId: string) => {
+    setGeneratingSample(characterId)
+    try {
+      const result = await api.ai.generateVoiceSample(characterId, voiceId)
+      setVoiceSamples((prev) => ({ ...prev, [characterId]: result.audioUrl }))
+      toast({ title: '语音样例已生成' })
+    } catch (err) {
+      toast({ title: '语音样例生成失败', description: String(err), variant: 'destructive' })
+    } finally {
+      setGeneratingSample(null)
+    }
+  }
+
+  // ── Batch generate samples ───────────────────────────────────
+
+  const handleBatchGenerateSamples = async () => {
+    const charactersWithVoice = characters.filter((c) => c.voiceId)
+    if (charactersWithVoice.length === 0) {
+      toast({ title: '没有已分配音色的角色' })
+      return
+    }
+    setBatchProgress({ current: 0, total: charactersWithVoice.length, message: '生成语音样例中...' })
+    let successCount = 0
+    for (let i = 0; i < charactersWithVoice.length; i++) {
+      const char = charactersWithVoice[i]
+      setGeneratingSample(char.id)
+      setBatchProgress({ current: i + 1, total: charactersWithVoice.length, message: `生成样例 ${i + 1}/${charactersWithVoice.length}...` })
+      try {
+        const result = await api.ai.generateVoiceSample(char.id, char.voiceId!)
+        setVoiceSamples((prev) => ({ ...prev, [char.id]: result.audioUrl }))
+        successCount++
+      } catch {
+        // Continue with next
+      }
+    }
+    setGeneratingSample(null)
+    setBatchProgress(null)
+    toast({ title: `${successCount}/${charactersWithVoice.length}个语音样例生成完毕` })
+  }
+
   // ── AI: Generate storyboard (via Agent) ──────────────────────
 
   const handleGenerateStoryboard = async () => {
@@ -316,9 +459,19 @@ export function EpisodeWorkspace() {
     }
   }
 
+  // ── Update storyboard field (inline editing) ──────────────────
+
+  const handleUpdateStoryboard = async (id: string, data: Partial<Storyboard>) => {
+    try {
+      await api.storyboards.update(id, data)
+      await fetchEpisode()
+    } catch (err) {
+      toast({ title: '更新失败', description: String(err), variant: 'destructive' })
+    }
+  }
+
   // ── Client-side async polling helper ──────────────────────
 
-  /** Poll /api/ai/poll-status until the task completes or fails */
   const pollAsyncTask = async (
     category: 'image' | 'video',
     taskId: string,
@@ -335,9 +488,7 @@ export function EpisodeWorkspace() {
         if (pollResult.status === 'failed') {
           throw new Error(pollResult.error || '生成失败')
         }
-        // status === 'pending' | 'processing' → continue polling
       } catch (err) {
-        // If pollStatus itself fails (e.g. network error), don't abort — retry
         if (i === maxPolls - 1) throw err
       }
     }
@@ -350,7 +501,6 @@ export function EpisodeWorkspace() {
     setGeneratingSceneImg(sceneId)
     try {
       const result = await api.ai.generateSceneImage(sceneId) as Record<string, unknown>
-      // Check if the response indicates async processing
       if (result.status === 'processing' && result.taskId) {
         toast({ title: '场景图生成中...' })
         await pollAsyncTask('image', result.taskId as string)
@@ -370,7 +520,6 @@ export function EpisodeWorkspace() {
     setGeneratingCharImg(charId)
     try {
       const result = await api.ai.generateCharacterImage(charId) as Record<string, unknown>
-      // Check if the response indicates async processing
       if (result.status === 'processing' && result.taskId) {
         toast({ title: '角色头像生成中...' })
         await pollAsyncTask('image', result.taskId as string)
@@ -414,7 +563,6 @@ export function EpisodeWorkspace() {
         selectedEpisodeId || undefined,
         storyboard.dialogueChar || undefined,
       ) as Record<string, unknown>
-      // Check if the response indicates async processing
       if (result.status === 'processing' && result.taskId) {
         toast({ title: `镜头 ${storyboard.shotNumber} 图片生成中...` })
         const pollResult = await pollAsyncTask('image', result.taskId as string)
@@ -454,7 +602,6 @@ export function EpisodeWorkspace() {
           selectedEpisodeId || undefined,
           sb.dialogueChar || undefined,
         ) as Record<string, unknown>
-        // Check if the response indicates async processing
         if (result.status === 'processing' && result.taskId) {
           setBatchProgress({ current: i + 1, total: pending.length, message: `图片 ${i + 1}/${pending.length} 异步生成中，等待结果...` })
           const pollResult = await pollAsyncTask('image', result.taskId as string)
@@ -467,7 +614,7 @@ export function EpisodeWorkspace() {
           successCount++
         }
       } catch {
-        // Continue with next shot even if one fails
+        // Continue
       }
     }
     setGeneratingShotImg(null)
@@ -487,11 +634,9 @@ export function EpisodeWorkspace() {
     try {
       const prompt = storyboard.videoPrompt ?? storyboard.imagePrompt ?? ''
       const result = await api.ai.generateVideo(storyboard.id, prompt, storyboard.firstFrameUrl ?? undefined) as Record<string, unknown>
-      // Check if the response indicates async processing
       if (result.status === 'processing' && result.taskId) {
         toast({ title: `镜头 ${storyboard.shotNumber} 视频生成中...` })
         await pollAsyncTask('video', result.taskId as string, 10000, 60)
-        // After polling completes, the server has already updated the storyboard
       }
       toast({ title: `镜头 ${storyboard.shotNumber} 视频已生成` })
       await fetchEpisode()
@@ -511,7 +656,6 @@ export function EpisodeWorkspace() {
     }
     setGeneratingTts(storyboard.id)
     try {
-      // Look up the character's voiceId from the characters state
       let voiceId: string | undefined
       if (storyboard.dialogueChar) {
         const character = characters.find(
@@ -534,7 +678,6 @@ export function EpisodeWorkspace() {
   // ── AI: Generate all videos ─────────────────────────────────
 
   const handleGenerateAllVideos = async () => {
-    // Remove firstFrameUrl restriction — text-to-video is now supported
     const pending = storyboards.filter((s) => !s.videoUrl && (s.videoPrompt || s.imagePrompt))
     if (pending.length === 0) {
       toast({ title: '没有可生成的镜头视频（需要镜头有视频提示词）' })
@@ -549,14 +692,13 @@ export function EpisodeWorkspace() {
       try {
         const prompt = sb.videoPrompt ?? sb.imagePrompt ?? ''
         const result = await api.ai.generateVideo(sb.id, prompt, sb.firstFrameUrl ?? undefined) as Record<string, unknown>
-        // Check if the response indicates async processing
         if (result.status === 'processing' && result.taskId) {
           setBatchProgress({ current: i + 1, total: pending.length, message: `视频 ${i + 1}/${pending.length} 异步生成中，等待结果...` })
           await pollAsyncTask('video', result.taskId as string, 10000, 60)
         }
         successCount++
       } catch {
-        // Continue with next shot even if one fails
+        // Continue
       }
     }
     setGeneratingVideo(null)
@@ -580,7 +722,6 @@ export function EpisodeWorkspace() {
     setBatchProgress({ current: 0, total, message: '一键生成图片中...' })
     let successCount = 0
 
-    // Generate character images first
     for (let i = 0; i < charsPending.length; i++) {
       const char = charsPending[i]
       setGeneratingCharImg(char.id)
@@ -598,7 +739,6 @@ export function EpisodeWorkspace() {
     }
     setGeneratingCharImg(null)
 
-    // Then generate scene images
     for (let i = 0; i < scenesPending.length; i++) {
       const scene = scenesPending[i]
       setGeneratingSceneImg(scene.id)
@@ -671,7 +811,7 @@ export function EpisodeWorkspace() {
         await api.ai.generateTts(sb.id, sb.dialogue!)
         successCount++
       } catch {
-        // Continue with next shot even if one fails
+        // Continue
       }
     }
     setGeneratingTts(null)
@@ -681,7 +821,7 @@ export function EpisodeWorkspace() {
     await fetchEpisode()
   }
 
-  // ── Compose a single shot (client-side Canvas + Web Audio + MediaRecorder) ────
+  // ── Compose a single shot ──────────────────────────────────────
 
   const handleComposeShot = async (storyboard: Storyboard) => {
     if (!storyboard.videoUrl) {
@@ -690,18 +830,16 @@ export function EpisodeWorkspace() {
     }
     setComposing(storyboard.id)
     try {
-      // Use Canvas + Web Audio API + MediaRecorder for real compositing
       const canvas = document.createElement('canvas')
       canvas.width = 1024
       canvas.height = 576
       const ctx = canvas.getContext('2d')
       if (!ctx) throw new Error('Canvas context not available')
 
-      // Load video
       const videoEl = document.createElement('video')
       videoEl.crossOrigin = 'anonymous'
       videoEl.playsInline = true
-      videoEl.muted = true // Mute video element; we'll capture audio separately
+      videoEl.muted = true
       videoEl.src = storyboard.videoUrl
 
       await new Promise<void>((resolve, reject) => {
@@ -709,17 +847,13 @@ export function EpisodeWorkspace() {
         videoEl.onerror = () => reject(new Error('Failed to load video'))
       })
 
-      // Setup canvas stream
       const canvasStream = canvas.captureStream(30)
-
-      // Setup audio if TTS exists
       let audioCtx: AudioContext | null = null
       let mixedStream: MediaStream | null = null
 
       if (storyboard.ttsAudioUrl) {
         try {
           audioCtx = new AudioContext()
-          // Create audio sources
           const videoSource = audioCtx.createMediaElementSource(
             Object.assign(document.createElement('video'), {
               crossOrigin: 'anonymous',
@@ -728,28 +862,20 @@ export function EpisodeWorkspace() {
           )
           const ttsAudioEl = new Audio(storyboard.ttsAudioUrl)
           const ttsSource = audioCtx.createMediaElementSource(ttsAudioEl)
-
-          // Create destination for mixed audio
           const dest = audioCtx.createMediaStreamDestination()
-
-          // Mix video audio + TTS audio
           videoSource.connect(dest)
           ttsSource.connect(dest)
-          videoSource.connect(audioCtx.destination) // For monitoring
+          videoSource.connect(audioCtx.destination)
           ttsSource.connect(audioCtx.destination)
-
-          // Combine canvas video + mixed audio
           const audioTracks = dest.stream.getAudioTracks()
           const videoTracks = canvasStream.getVideoTracks()
           mixedStream = new MediaStream([...videoTracks, ...audioTracks])
         } catch {
-          // If audio mixing fails, just use canvas stream without audio
           console.warn('Audio mixing failed, composing without TTS audio')
         }
       }
 
       const outputStream = mixedStream || canvasStream
-
       const recorder = new MediaRecorder(outputStream, {
         mimeType: MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
           ? 'video/webm;codecs=vp9'
@@ -763,20 +889,16 @@ export function EpisodeWorkspace() {
       }
 
       const blob = await new Promise<Blob>((resolve, reject) => {
-        recorder.onstop = () => {
-          resolve(new Blob(chunks, { type: 'video/webm' }))
-        }
+        recorder.onstop = () => resolve(new Blob(chunks, { type: 'video/webm' }))
         recorder.onerror = reject
         recorder.start()
       })
 
-      // Play video and draw frames onto canvas
       videoEl.currentTime = 0
       await new Promise<void>((resolveCompose) => {
         const drawFrame = () => {
           if (videoEl.paused || videoEl.ended) {
             ctx!.drawImage(videoEl, 0, 0, canvas.width, canvas.height)
-            // Draw subtitle if dialogue exists
             if (storyboard.dialogue) {
               ctx!.fillStyle = 'rgba(0,0,0,0.6)'
               ctx!.fillRect(0, canvas.height - 60, canvas.width, 60)
@@ -791,7 +913,6 @@ export function EpisodeWorkspace() {
             return
           }
           ctx!.drawImage(videoEl, 0, 0, canvas.width, canvas.height)
-          // Draw subtitle if dialogue exists
           if (storyboard.dialogue) {
             ctx!.fillStyle = 'rgba(0,0,0,0.6)'
             ctx!.fillRect(0, canvas.height - 60, canvas.width, 60)
@@ -807,7 +928,6 @@ export function EpisodeWorkspace() {
         }
         videoEl.onplay = () => drawFrame()
         videoEl.onended = () => {
-          // Draw final frame one more time then stop
           drawFrame()
           setTimeout(() => resolveCompose(), 100)
         }
@@ -816,21 +936,14 @@ export function EpisodeWorkspace() {
 
       recorder.stop()
       const composedBlob = await blob
-
-      // Convert blob to base64 data URL for persistence
       const reader = new FileReader()
       const composedUrl = await new Promise<string>((resolve) => {
         reader.onload = () => resolve(reader.result as string)
         reader.readAsDataURL(composedBlob)
       })
 
-      // Save to the storyboard
       await api.storyboards.update(storyboard.id, { composedUrl })
-
-      if (audioCtx) {
-        audioCtx.close().catch(() => {})
-      }
-
+      if (audioCtx) audioCtx.close().catch(() => {})
       toast({ title: `镜头 ${storyboard.shotNumber} 已合成（含字幕+配音）` })
       await fetchEpisode()
     } catch (err) {
@@ -856,11 +969,10 @@ export function EpisodeWorkspace() {
       setComposing(sb.id)
       setBatchProgress({ current: i + 1, total: composable.length, message: `合成镜头 ${i + 1}/${composable.length}（字幕+配音）...` })
       try {
-        // Use the real compositing workflow
         await handleComposeShot(sb)
         successCount++
       } catch {
-        // Continue with next shot even if one fails
+        // Continue
       }
     }
     setComposing(null)
@@ -892,16 +1004,11 @@ export function EpisodeWorkspace() {
     }
   }
 
-  // ── Export final video (client-side canvas + MediaRecorder + audio mixing) ─
+  // ── Export final video ──────────────────────────────────────
 
   const handleExport = async () => {
-    // Check export permission
     if (!perms.canExport) {
-      toast({
-        title: '导出功能需要专业版',
-        description: '免费用户无法导出成片，请升级专业版。',
-        variant: 'destructive',
-      })
+      toast({ title: '导出功能需要专业版', description: '免费用户无法导出成片，请升级专业版。', variant: 'destructive' })
       return
     }
     const videoShots = storyboards.filter((s) => s.composedUrl || s.videoUrl)
@@ -916,133 +1023,61 @@ export function EpisodeWorkspace() {
       canvas.height = 576
       const ctx = canvas.getContext('2d')
       if (!ctx) throw new Error('Canvas context not available')
-
       const canvasStream = canvas.captureStream(30)
-
-      // Try to create an audio context for mixing
-      let audioCtx: AudioContext | null = null
-      let mixedStream: MediaStream | null = null
-
-      try {
-        audioCtx = new AudioContext()
-        const dest = audioCtx.createMediaStreamDestination()
-        // Connect all TTS audio tracks
-        const audioTracks = dest.stream.getAudioTracks()
-        const videoTracks = canvasStream.getVideoTracks()
-        if (audioTracks.length > 0) {
-          mixedStream = new MediaStream([...videoTracks, ...audioTracks])
-        }
-      } catch {
-        // If AudioContext not available, just use canvas stream
-      }
-
-      const outputStream = mixedStream || canvasStream
-
-      const recorder = new MediaRecorder(outputStream, {
-        mimeType: MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-          ? 'video/webm;codecs=vp9'
-          : 'video/webm',
+      const recorder = new MediaRecorder(canvasStream, {
+        mimeType: MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm',
         videoBitsPerSecond: 5000000,
       })
-
       const chunks: Blob[] = []
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.push(e.data)
-      }
-
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data) }
       const blob = await new Promise<Blob>((resolve, reject) => {
-        recorder.onstop = () => {
-          resolve(new Blob(chunks, { type: 'video/webm' }))
-        }
+        recorder.onstop = () => resolve(new Blob(chunks, { type: 'video/webm' }))
         recorder.onerror = reject
         recorder.start()
       })
-
-      // Play each shot video onto the canvas
       const tempVideo = document.createElement('video')
       tempVideo.crossOrigin = 'anonymous'
       tempVideo.playsInline = true
       tempVideo.muted = true
-
       for (let i = 0; i < videoShots.length; i++) {
         const shot = videoShots[i]
         const videoSource = shot.composedUrl || shot.videoUrl!
-        setBatchProgress({
-          current: i + 1,
-          total: videoShots.length,
-          message: `导出镜头 ${i + 1}/${videoShots.length}...`,
-        })
-
+        setBatchProgress({ current: i + 1, total: videoShots.length, message: `导出镜头 ${i + 1}/${videoShots.length}...` })
         await new Promise<void>((resolveShot) => {
           tempVideo.src = videoSource
-          tempVideo.onloadeddata = () => {
-            tempVideo.play()
-          }
-          tempVideo.onended = () => {
-            resolveShot()
-          }
-          tempVideo.onerror = () => {
-            resolveShot() // Skip on error
-          }
-
-          // Draw frames with subtitle overlay
+          tempVideo.onloadeddata = () => { tempVideo.play() }
+          tempVideo.onended = () => { resolveShot() }
+          tempVideo.onerror = () => { resolveShot() }
           const drawFrame = () => {
             if (tempVideo.paused || tempVideo.ended) {
               ctx!.drawImage(tempVideo, 0, 0, canvas.width, canvas.height)
-              // Draw subtitle
               if (shot.dialogue) {
-                ctx!.fillStyle = 'rgba(0,0,0,0.6)'
-                ctx!.fillRect(0, canvas.height - 60, canvas.width, 60)
-                ctx!.fillStyle = 'white'
-                ctx!.font = 'bold 20px sans-serif'
-                ctx!.textAlign = 'center'
-                const subtitleText = shot.dialogueChar
-                  ? `${shot.dialogueChar}：${shot.dialogue}`
-                  : shot.dialogue
-                ctx!.fillText(subtitleText, canvas.width / 2, canvas.height - 25)
+                ctx!.fillStyle = 'rgba(0,0,0,0.6)'; ctx!.fillRect(0, canvas.height - 60, canvas.width, 60)
+                ctx!.fillStyle = 'white'; ctx!.font = 'bold 20px sans-serif'; ctx!.textAlign = 'center'
+                ctx!.fillText(shot.dialogueChar ? `${shot.dialogueChar}：${shot.dialogue}` : shot.dialogue, canvas.width / 2, canvas.height - 25)
               }
               return
             }
             ctx!.drawImage(tempVideo, 0, 0, canvas.width, canvas.height)
-            // Draw subtitle
             if (shot.dialogue) {
-              ctx!.fillStyle = 'rgba(0,0,0,0.6)'
-              ctx!.fillRect(0, canvas.height - 60, canvas.width, 60)
-              ctx!.fillStyle = 'white'
-              ctx!.font = 'bold 20px sans-serif'
-              ctx!.textAlign = 'center'
-              const subtitleText = shot.dialogueChar
-                ? `${shot.dialogueChar}：${shot.dialogue}`
-                : shot.dialogue
-              ctx!.fillText(subtitleText, canvas.width / 2, canvas.height - 25)
+              ctx!.fillStyle = 'rgba(0,0,0,0.6)'; ctx!.fillRect(0, canvas.height - 60, canvas.width, 60)
+              ctx!.fillStyle = 'white'; ctx!.font = 'bold 20px sans-serif'; ctx!.textAlign = 'center'
+              ctx!.fillText(shot.dialogueChar ? `${shot.dialogueChar}：${shot.dialogue}` : shot.dialogue, canvas.width / 2, canvas.height - 25)
             }
             requestAnimationFrame(drawFrame)
           }
-          tempVideo.onplay = () => {
-            drawFrame()
-          }
+          tempVideo.onplay = () => { drawFrame() }
         })
-
-        // Small pause between shots
         await new Promise((r) => setTimeout(r, 300))
       }
-
       recorder.stop()
       const resultBlob = await blob
-
-      if (audioCtx) {
-        audioCtx.close().catch(() => {})
-      }
-
-      // Download
       const url = URL.createObjectURL(resultBlob)
       const a = document.createElement('a')
-      a.href = url
-      a.download = `episode-export-${Date.now()}.webm`
-      a.click()
+      a.href = url; a.download = `${currentEpisode?.title || 'episode'}_export.webm`
+      document.body.appendChild(a); a.click(); document.body.removeChild(a)
       URL.revokeObjectURL(url)
-
-      toast({ title: '视频导出成功（含字幕叠加）' })
+      toast({ title: '导出完成' })
     } catch (err) {
       toast({ title: '导出失败', description: String(err), variant: 'destructive' })
     } finally {
@@ -1050,13 +1085,6 @@ export function EpisodeWorkspace() {
       setBatchProgress(null)
     }
   }
-
-  // ── Derive current processing state from episode ───────────
-
-  const episode = currentEpisode as EpisodeDetail | null
-  const isRewriting = episode?.scriptStatus === 'processing'
-  const isExtracting = episode?.extractStatus === 'processing'
-  const isStoryboarding = episode?.storyboardStatus === 'processing'
 
   // ── Determine sidebar step active state ────────────────────
 
@@ -1068,6 +1096,8 @@ export function EpisodeWorkspace() {
   }
 
   // ── Render active panel ────────────────────────────────────
+
+  const episode = currentEpisode
 
   const renderActivePanel = () => {
     switch (activeStep) {
@@ -1081,7 +1111,7 @@ export function EpisodeWorkspace() {
             setScriptContent={setScriptContent}
             saving={saving}
             aiLoading={aiLoading}
-            isRewriting={isRewriting}
+            isRewriting={agentExec.isRunning('script_rewriter')}
             episode={episode}
             agentExec={agentExec}
             activeStep={activeStep}
@@ -1097,7 +1127,7 @@ export function EpisodeWorkspace() {
             characters={characters}
             scenes={scenes}
             aiLoading={aiLoading}
-            isExtracting={isExtracting}
+            isExtracting={agentExec.isRunning('extractor')}
             episode={episode}
             agentExec={agentExec}
             generatingCharImg={generatingCharImg}
@@ -1120,6 +1150,13 @@ export function EpisodeWorkspace() {
             agentExec={agentExec}
             activeStep={activeStep}
             handleVoiceAssign={handleVoiceAssign}
+            voices={voices}
+            activeTtsProvider={activeTtsProvider}
+            voiceSamples={voiceSamples}
+            generatingSample={generatingSample}
+            handleAssignVoice={handleAssignVoice}
+            handleGenerateVoiceSample={handleGenerateVoiceSample}
+            handleBatchGenerateSamples={handleBatchGenerateSamples}
           />
         )
       case 'storyboard':
@@ -1127,7 +1164,7 @@ export function EpisodeWorkspace() {
           <StoryboardPanel
             storyboards={storyboards}
             aiLoading={aiLoading}
-            isStoryboarding={isStoryboarding}
+            isStoryboarding={agentExec.isRunning('storyboard_breaker')}
             episode={episode}
             agentExec={agentExec}
             generatingShotImg={generatingShotImg}
@@ -1145,6 +1182,7 @@ export function EpisodeWorkspace() {
             handleGenerateTts={handleGenerateTts}
             handleUpload={handleUpload}
             handleCopy={handleCopy}
+            handleUpdateStoryboard={handleUpdateStoryboard}
           />
         )
       case 'production':
@@ -1290,9 +1328,9 @@ export function EpisodeWorkspace() {
         </div>
       </header>
 
-      {/* ── Body: Sidebar + Main ───────────────────────────── */}
+      {/* ── Body: Sidebar + Main + Bottom Nav ──────────────── */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Sidebar */}
+        {/* 11-Step Pipeline Sidebar */}
         <AnimatePresence>
           {sidebarOpen && (
             <motion.aside
@@ -1305,89 +1343,77 @@ export function EpisodeWorkspace() {
               <div className="w-[240px] h-full flex flex-col">
                 {/* Pipeline steps */}
                 <ScrollArea className="flex-1">
-                  <div className="p-3 space-y-1">
-                    {STEPS.map((step, idx) => (
-                      <div key={step.key}>
-                        {/* Main step */}
+                  <div className="p-3 space-y-0.5">
+                    <div className="px-2 py-1.5 mb-2">
+                      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        制作管线
+                      </h3>
+                    </div>
+                    {PIPELINE_STEPS.map((step) => {
+                      const stepStatus = getPipelineStepStatus(step.key)
+                      const isActive = activePipelineStep === step.key
+                      return (
                         <button
-                          onClick={() => {
-                            if (step.subSteps) {
-                              setActiveStep(step.subSteps[0].key)
-                            } else {
-                              setActiveStep(step.key)
-                            }
-                          }}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all duration-150 group ${
-                            isSidebarStepActive(step)
+                          key={step.key}
+                          onClick={() => handlePipelineStepClick(step.key)}
+                          className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left transition-all duration-150 group ${
+                            isActive
                               ? 'bg-primary/10 text-primary'
-                              : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                              : stepStatus === 'completed'
+                                ? 'text-emerald-600 hover:bg-emerald-500/5'
+                                : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
                           }`}
                         >
-                          {/* Step number */}
-                          <div
-                            className={`flex-shrink-0 size-7 rounded flex items-center justify-center text-xs font-bold ${
-                              isSidebarStepActive(step)
-                                ? 'bg-primary text-primary-foreground'
-                                : isStepCompleted(step.key)
-                                  ? 'bg-emerald-500/20 text-emerald-500'
-                                  : 'bg-muted text-muted-foreground'
-                            }`}
-                          >
-                            {isStepCompleted(step.key) && !isSidebarStepActive(step) ? (
-                              <Check className="size-3.5" />
+                          {/* Status indicator */}
+                          <div className="flex-shrink-0 size-6 rounded-full flex items-center justify-center">
+                            {stepStatus === 'completed' ? (
+                              <div className="size-6 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                                <Check className="size-3.5 text-emerald-500" />
+                              </div>
+                            ) : stepStatus === 'active' ? (
+                              <div className="size-6 rounded-full bg-primary/20 flex items-center justify-center">
+                                <Loader2 className="size-3 text-primary animate-spin" />
+                              </div>
                             ) : (
-                              idx + 1
+                              <div className="size-6 rounded-full bg-muted flex items-center justify-center">
+                                <span className="text-[10px] font-bold text-muted-foreground">
+                                  {step.stepNumber}
+                                </span>
+                              </div>
                             )}
                           </div>
 
-                          <span className="text-sm font-medium">{step.label}</span>
+                          <div className="flex-1 min-w-0">
+                            <span className={`text-xs font-medium ${isActive ? 'text-primary' : ''}`}>
+                              {step.label}
+                            </span>
+                            {pipelineStatus?.pipeline?.[step.key] && step.key !== 'raw_content' && step.key !== 'script_rewrite' && step.key !== 'storyboard' && (
+                              <div className="text-[10px] text-muted-foreground mt-0.5">
+                                {pipelineStatus.pipeline[step.key].completed}/{pipelineStatus.pipeline[step.key].total}
+                              </div>
+                            )}
+                          </div>
 
-                          {isStepCompleted(step.key) && !isSidebarStepActive(step) && (
-                            <Check className="size-3.5 text-emerald-500 ml-auto" />
+                          {isActive && (
+                            <ChevronRight className="size-3 text-primary flex-shrink-0" />
                           )}
                         </button>
-
-                        {/* Sub-steps */}
-                        {step.subSteps && (
-                          <div className="ml-4 border-l border-border/50 pl-3 mt-1 space-y-0.5">
-                            {step.subSteps.map((sub) => (
-                              <button
-                                key={sub.key}
-                                onClick={() => setActiveStep(sub.key)}
-                                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-left text-xs transition-all duration-150 ${
-                                  activeStep === sub.key
-                                    ? 'bg-primary/10 text-primary font-medium'
-                                    : isStepCompleted(sub.key)
-                                      ? 'text-emerald-500'
-                                      : 'text-muted-foreground hover:text-foreground'
-                                }`}
-                              >
-                                {isStepCompleted(sub.key) && activeStep !== sub.key ? (
-                                  <Check className="size-3 flex-shrink-0" />
-                                ) : (
-                                  <ChevronRight className="size-3 flex-shrink-0" />
-                                )}
-                                {sub.label}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </ScrollArea>
 
                 {/* Progress */}
                 <div className="p-3 border-t border-border/50">
                   <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
-                    <span>总进度</span>
-                    <span>{progressPercent}%</span>
+                    <span>管线进度</span>
+                    <span className="font-medium">{pipelineCompletedCount}/{pipelineTotalCount} 步完成</span>
                   </div>
                   <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                     <motion.div
-                      className="h-full bg-primary rounded-full"
+                      className="h-full bg-emerald-500 rounded-full"
                       initial={{ width: 0 }}
-                      animate={{ width: `${progressPercent}%` }}
+                      animate={{ width: `${pipelineStatus?.progressPercent ?? 0}%` }}
                       transition={{ duration: 0.5 }}
                     />
                   </div>
@@ -1412,6 +1438,64 @@ export function EpisodeWorkspace() {
               {renderActivePanel()}
             </motion.div>
           </AnimatePresence>
+
+          {/* ── Bottom Navigation Bar ─────────────────────────── */}
+          <div className="flex-shrink-0 border-t border-border/50 bg-card/50 px-4 py-2">
+            <div className="flex items-center justify-between">
+              {/* Previous button */}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handlePrevStep}
+                disabled={currentPipelineIndex <= 0}
+                className="gap-1 text-xs"
+              >
+                <ChevronLeft className="size-3.5" />
+                <span className="hidden sm:inline">上一步</span>
+              </Button>
+
+              {/* Step dots */}
+              <div className="flex items-center gap-1.5 overflow-x-auto px-2">
+                {PIPELINE_STEPS.map((step) => {
+                  const stepStatus = getPipelineStepStatus(step.key)
+                  const isActive = activePipelineStep === step.key
+                  return (
+                    <button
+                      key={step.key}
+                      onClick={() => handlePipelineStepClick(step.key)}
+                      title={step.label}
+                      className={`flex-shrink-0 transition-all duration-150 rounded-full ${
+                        isActive
+                          ? 'size-3 bg-primary'
+                          : stepStatus === 'completed'
+                            ? 'size-2 bg-emerald-500 hover:bg-emerald-400'
+                            : 'size-2 bg-muted-foreground/30 hover:bg-muted-foreground/60'
+                      }`}
+                    />
+                  )
+                })}
+              </div>
+
+              {/* Next button */}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleNextStep}
+                disabled={currentPipelineIndex >= PIPELINE_STEPS.length - 1}
+                className="gap-1 text-xs"
+              >
+                <span className="hidden sm:inline">下一步</span>
+                <ChevronRight className="size-3.5" />
+              </Button>
+            </div>
+
+            {/* Current step label */}
+            <div className="text-center mt-1">
+              <span className="text-[10px] text-muted-foreground">
+                {PIPELINE_STEPS[currentPipelineIndex]?.stepNumber}/11 — {PIPELINE_STEPS[currentPipelineIndex]?.label}
+              </span>
+            </div>
+          </div>
         </main>
       </div>
     </div>

@@ -1,8 +1,22 @@
 import type { EpisodeDetail, Character, Scene, Storyboard } from '@/lib/store'
 import type { UserPermissions } from '@/hooks/use-permissions'
 
-// ── Step types ────────────────────────────────────────────────
+// ── Step types (11-step pipeline) ──────────────────────────────
 
+export type PipelineStepKey =
+  | 'raw_content'
+  | 'script_rewrite'
+  | 'character_extract'
+  | 'voice_assign'
+  | 'storyboard'
+  | 'character_images'
+  | 'scene_images'
+  | 'dubbing'
+  | 'shot_frames'
+  | 'video_generation'
+  | 'compose_merge'
+
+// Legacy step key (used in some sub-panels for backward compat)
 export type StepKey = 'raw' | 'rewrite' | 'extract' | 'voice' | 'storyboard' | 'production'
 
 export interface StepDef {
@@ -10,6 +24,29 @@ export interface StepDef {
   label: string
   icon: React.ReactNode
   subSteps?: { key: StepKey; label: string }[]
+}
+
+// 11-step pipeline step definition
+export interface PipelineStepDef {
+  key: PipelineStepKey
+  label: string
+  icon: React.ReactNode
+  stepNumber: number
+}
+
+// Pipeline step status from API
+export interface PipelineStepStatus {
+  status: 'pending' | 'active' | 'completed'
+  completed: number
+  total: number
+}
+
+export interface PipelineStatus {
+  pipeline: Record<PipelineStepKey, PipelineStepStatus>
+  steps: PipelineStepKey[]
+  completedSteps: number
+  totalSteps: number
+  progressPercent: number
 }
 
 // ── Batch progress ────────────────────────────────────────────
@@ -45,6 +82,17 @@ export interface AgentExecState {
   resultTexts: Record<string, string>
   durations: Record<string, number>
   errors: Record<string, string | null>
+}
+
+// ── Voice types ───────────────────────────────────────────────
+
+export interface VoiceInfo {
+  id: string
+  name: string
+  provider: string
+  language?: string
+  description?: string
+  gender?: string
 }
 
 // ── Panel props ───────────────────────────────────────────────
@@ -91,6 +139,14 @@ export interface VoicePanelProps {
   agentExec: AgentExecState
   activeStep: StepKey
   handleVoiceAssign: () => Promise<void>
+  // Enhanced voice features
+  voices: VoiceInfo[]
+  activeTtsProvider: string | null
+  voiceSamples: Record<string, string> // characterId -> audioUrl
+  generatingSample: string | null // characterId being generated
+  handleAssignVoice: (characterId: string, voiceId: string) => Promise<void>
+  handleGenerateVoiceSample: (characterId: string, voiceId: string) => Promise<void>
+  handleBatchGenerateSamples: () => Promise<void>
 }
 
 export interface StoryboardPanelProps {
@@ -114,6 +170,7 @@ export interface StoryboardPanelProps {
   handleGenerateTts: (storyboard: Storyboard) => Promise<void>
   handleUpload: (file: File, options: UploadOptions, fieldKey: string) => Promise<void>
   handleCopy: (text: string, fieldId: string) => Promise<void>
+  handleUpdateStoryboard: (id: string, data: Partial<Storyboard>) => Promise<void>
 }
 
 export interface ProductionPanelProps {
