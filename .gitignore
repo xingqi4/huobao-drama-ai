@@ -55,3 +55,16 @@ server.log
 
 # Prisma SQLite mode marker (local dev only)
 prisma/.sqlite-mode
+
+# Subprojects - separate independent projects, not part of this repo
+financial-services/
+huobao-drama-ai/
+worldmonitor/
+Horizon/
+AiToEarn/
+TradingAgents-CN/
+
+# Download and agent context directories
+download/
+agent-ctx/
+db/
