@@ -214,3 +214,28 @@ Stage Summary:
 - 子项目已从Git追踪中移除，不会再推送到代码仓库
 - 免费用户API Key配置功能修复完成：保存、测试连接、切换供应商均可正常工作
 - 代码已推送: 374c509 → GitHub → Vercel 自动部署
+
+---
+Task ID: 7
+Agent: main
+Task: 修复Vercel部署白屏问题
+
+Work Log:
+- 用户报告部署后白屏报错
+- 用agent-browser诊断: 页面显示 "Application error: a client-side exception has occurred"
+- 根本原因: settings-view.tsx 导入了 PROVIDER_PRESETS from '@/lib/ai-config'
+  - ai-config.ts 顶部有 `import { db } from '@/lib/db'` (PrismaClient)
+  - PrismaClient 无法在浏览器端运行，导致整个页面白屏
+- 修复方案:
+  - 创建 src/lib/provider-presets.ts — 纯数据文件，不含任何服务端导入
+  - 将 PROVIDER_PRESETS、AiCategory、ModelOption、ProviderPreset 类型定义提取到该文件
+  - ai-config.ts 从 provider-presets.ts 重导出（保持后端API兼容）
+  - settings-view.tsx 改为从 provider-presets.ts 导入
+- 构建验证通过 (next build)
+- 推送到 GitHub: 28190a8
+- Vercel 部署后验证: 页面正常显示登录界面
+
+Stage Summary:
+- 白屏问题根因: 客户端组件导入了含PrismaClient的服务端模块
+- 修复: 将纯数据提取到 client-safe 模块 provider-presets.ts
+- 页面已恢复正常
