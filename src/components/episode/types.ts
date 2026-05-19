@@ -125,6 +125,7 @@ export interface ExtractPanelProps {
   generatingSceneImg: string | null
   batchProgress: BatchProgress | null
   uploadingField: string | null
+  activePipelineStep: PipelineStepKey
   handleExtract: () => Promise<void>
   handleGenerateAllExtractImages: () => Promise<void>
   handleGenerateCharSheet: (charId: string) => Promise<void>
@@ -178,6 +179,7 @@ export interface StoryboardPanelProps {
   uploadingField: string | null
   copiedField: string | null
   gridState: GridGenerationState
+  activePipelineStep: PipelineStepKey
   handleGenerateStoryboard: () => Promise<void>
   handleEnhanceShotPrompt: (storyboard: Storyboard) => Promise<void>
   handleGenerateAllImages: () => Promise<void>
@@ -227,6 +229,7 @@ export interface ProductionPanelProps {
   ffmpegAvailable: boolean
   merging: boolean
   mergeStatus: MergeStatus | null
+  activePipelineStep: PipelineStepKey
   handleGenerateShotImage: (storyboard: Storyboard) => Promise<void>
   handleGenerateVideo: (storyboard: Storyboard) => Promise<void>
   handleGenerateTts: (storyboard: Storyboard) => Promise<void>

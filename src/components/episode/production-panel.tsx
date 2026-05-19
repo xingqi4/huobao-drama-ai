@@ -21,7 +21,59 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Progress } from '@/components/ui/progress'
-import type { ProductionPanelProps } from './types'
+import type { ProductionPanelProps, PipelineStepKey } from './types'
+
+// ── Step-aware configuration ────────────────────────────────────
+
+interface ProductionStepConfig {
+  stepNumber: string
+  title: string
+  subtitle: string
+  showTts: boolean
+  showVideo: boolean
+  showCompose: boolean
+}
+
+function getProductionStepConfig(step: PipelineStepKey): ProductionStepConfig {
+  switch (step) {
+    case 'dubbing':
+      return {
+        stepNumber: '08',
+        title: '配音生成',
+        subtitle: '为每个镜头的对白生成TTS配音',
+        showTts: true,
+        showVideo: false,
+        showCompose: false,
+      }
+    case 'video_generation':
+      return {
+        stepNumber: '10',
+        title: '视频生成',
+        subtitle: '为每个镜头生成视频片段',
+        showTts: false,
+        showVideo: true,
+        showCompose: false,
+      }
+    case 'compose_merge':
+      return {
+        stepNumber: '11',
+        title: '合成拼接',
+        subtitle: '合成（字幕+配音叠加）· 合并成片 · 预览 · 导出',
+        showTts: false,
+        showVideo: false,
+        showCompose: true,
+      }
+    default:
+      return {
+        stepNumber: '08',
+        title: '后期制作',
+        subtitle: '配音 · 合成（字幕+配音） · 预览 · 导出',
+        showTts: true,
+        showVideo: true,
+        showCompose: true,
+      }
+  }
+}
 
 export function ProductionPanel({
   storyboards,
@@ -42,6 +94,7 @@ export function ProductionPanel({
   ffmpegAvailable,
   merging,
   mergeStatus,
+  activePipelineStep,
   handleGenerateShotImage,
   handleGenerateVideo,
   handleGenerateTts,
@@ -57,6 +110,8 @@ export function ProductionPanel({
   setPreviewMode,
   setCurrentPreviewShot,
 }: ProductionPanelProps) {
+  const config = getProductionStepConfig(activePipelineStep)
+
   const hasAnyStoryboard = storyboards.length > 0
   const totalShots = storyboards.length
   const shotsWithImage = storyboards.filter((s) => s.firstFrameUrl).length
@@ -87,10 +142,10 @@ export function ProductionPanel({
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-3 border-b border-border/50 flex-wrap gap-2">
         <div className="flex items-center gap-3">
-          <span className="text-xs font-mono text-primary/80">06</span>
+          <span className="text-xs font-mono text-primary/80">{config.stepNumber}</span>
           <div>
-            <h2 className="text-sm font-semibold">后期制作</h2>
-            <p className="text-[10px] text-muted-foreground">配音 · 合成（字幕+配音） · 预览 · 导出</p>
+            <h2 className="text-sm font-semibold">{config.title}</h2>
+            <p className="text-[10px] text-muted-foreground">{config.subtitle}</p>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -121,9 +176,9 @@ export function ProductionPanel({
             <div className="mx-auto size-16 rounded-full bg-muted flex items-center justify-center mb-5">
               <Clapperboard className="size-8 text-muted-foreground/50" />
             </div>
-            <h2 className="text-lg font-semibold mb-2">后期制作</h2>
+            <h2 className="text-lg font-semibold mb-2">{config.title}</h2>
             <p className="text-sm text-muted-foreground">
-              请先在「分镜」步骤中生成分镜后再进行后期制作
+              请先在「分镜」步骤中生成分镜后再进行{config.title.toLowerCase()}
             </p>
             <Button
               variant="outline"
@@ -137,62 +192,82 @@ export function ProductionPanel({
       ) : (
         <ScrollArea className="flex-1">
           <div className="p-6 space-y-6">
-            {/* Pipeline status bar — more detailed */}
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-              <Card className="border-border/50 py-0 gap-0">
-                <CardContent className="p-3 text-center">
-                  <div className="flex items-center justify-center gap-1.5 mb-1">
-                    <ImageIcon className="size-3.5 text-primary/70" />
-                    <span className="text-[10px] text-muted-foreground">图片</span>
-                  </div>
-                  <div className="text-lg font-bold">{shotsWithImage}<span className="text-xs font-normal text-muted-foreground">/{totalShots}</span></div>
-                  <Progress value={totalShots > 0 ? (shotsWithImage / totalShots) * 100 : 0} className="h-1 mt-1.5" />
-                </CardContent>
-              </Card>
-              <Card className="border-border/50 py-0 gap-0">
-                <CardContent className="p-3 text-center">
-                  <div className="flex items-center justify-center gap-1.5 mb-1">
-                    <Video className="size-3.5 text-primary/70" />
-                    <span className="text-[10px] text-muted-foreground">视频</span>
-                  </div>
-                  <div className="text-lg font-bold">{shotsWithVideo}<span className="text-xs font-normal text-muted-foreground">/{totalShots}</span></div>
-                  <Progress value={totalShots > 0 ? (shotsWithVideo / totalShots) * 100 : 0} className="h-1 mt-1.5" />
-                </CardContent>
-              </Card>
-              <Card className="border-border/50 py-0 gap-0">
-                <CardContent className="p-3 text-center">
-                  <div className="flex items-center justify-center gap-1.5 mb-1">
-                    <Mic className="size-3.5 text-primary/70" />
-                    <span className="text-[10px] text-muted-foreground">配音</span>
-                  </div>
-                  <div className="text-lg font-bold">{shotsWithTts}<span className="text-xs font-normal text-muted-foreground">/{shotsWithDialogue}</span></div>
-                  <Progress value={shotsWithDialogue > 0 ? (shotsWithTts / shotsWithDialogue) * 100 : 0} className="h-1 mt-1.5" />
-                </CardContent>
-              </Card>
-              <Card className="border-border/50 py-0 gap-0">
-                <CardContent className="p-3 text-center">
-                  <div className="flex items-center justify-center gap-1.5 mb-1">
-                    <Layers className="size-3.5 text-primary/70" />
-                    <span className="text-[10px] text-muted-foreground">合成</span>
-                  </div>
-                  <div className="text-lg font-bold">{shotsComposed}<span className="text-xs font-normal text-muted-foreground">/{shotsWithVideo}</span></div>
-                  <Progress value={shotsWithVideo > 0 ? (shotsComposed / shotsWithVideo) * 100 : 0} className="h-1 mt-1.5" />
-                </CardContent>
-              </Card>
-              <Card className="border-border/50 py-0 gap-0 sm:col-span-1 col-span-2">
-                <CardContent className="p-3 text-center">
-                  <div className="flex items-center justify-center gap-1.5 mb-1">
-                    <Clapperboard className="size-3.5 text-primary/70" />
-                    <span className="text-[10px] text-muted-foreground">总进度</span>
-                  </div>
-                  <div className="text-lg font-bold">{pipelinePercent}<span className="text-xs font-normal text-muted-foreground">%</span></div>
-                  <Progress value={pipelinePercent} className="h-1 mt-1.5" />
-                </CardContent>
-              </Card>
+            {/* Pipeline status bar — filtered by step */}
+            <div className={`grid gap-3 ${
+              config.showTts && config.showVideo && config.showCompose
+                ? 'grid-cols-2 sm:grid-cols-5'
+                : config.showCompose
+                  ? 'grid-cols-2 sm:grid-cols-3'
+                  : 'grid-cols-2'
+            }`}>
+              {/* Image stat — only show in video_generation */}
+              {config.showVideo && (
+                <Card className="border-border/50 py-0 gap-0">
+                  <CardContent className="p-3 text-center">
+                    <div className="flex items-center justify-center gap-1.5 mb-1">
+                      <ImageIcon className="size-3.5 text-primary/70" />
+                      <span className="text-[10px] text-muted-foreground">图片</span>
+                    </div>
+                    <div className="text-lg font-bold">{shotsWithImage}<span className="text-xs font-normal text-muted-foreground">/{totalShots}</span></div>
+                    <Progress value={totalShots > 0 ? (shotsWithImage / totalShots) * 100 : 0} className="h-1 mt-1.5" />
+                  </CardContent>
+                </Card>
+              )}
+              {/* Video stat */}
+              {config.showVideo && (
+                <Card className="border-border/50 py-0 gap-0">
+                  <CardContent className="p-3 text-center">
+                    <div className="flex items-center justify-center gap-1.5 mb-1">
+                      <Video className="size-3.5 text-primary/70" />
+                      <span className="text-[10px] text-muted-foreground">视频</span>
+                    </div>
+                    <div className="text-lg font-bold">{shotsWithVideo}<span className="text-xs font-normal text-muted-foreground">/{totalShots}</span></div>
+                    <Progress value={totalShots > 0 ? (shotsWithVideo / totalShots) * 100 : 0} className="h-1 mt-1.5" />
+                  </CardContent>
+                </Card>
+              )}
+              {/* TTS stat */}
+              {config.showTts && (
+                <Card className="border-border/50 py-0 gap-0">
+                  <CardContent className="p-3 text-center">
+                    <div className="flex items-center justify-center gap-1.5 mb-1">
+                      <Mic className="size-3.5 text-primary/70" />
+                      <span className="text-[10px] text-muted-foreground">配音</span>
+                    </div>
+                    <div className="text-lg font-bold">{shotsWithTts}<span className="text-xs font-normal text-muted-foreground">/{shotsWithDialogue}</span></div>
+                    <Progress value={shotsWithDialogue > 0 ? (shotsWithTts / shotsWithDialogue) * 100 : 0} className="h-1 mt-1.5" />
+                  </CardContent>
+                </Card>
+              )}
+              {/* Compose stat */}
+              {config.showCompose && (
+                <>
+                  <Card className="border-border/50 py-0 gap-0">
+                    <CardContent className="p-3 text-center">
+                      <div className="flex items-center justify-center gap-1.5 mb-1">
+                        <Layers className="size-3.5 text-primary/70" />
+                        <span className="text-[10px] text-muted-foreground">合成</span>
+                      </div>
+                      <div className="text-lg font-bold">{shotsComposed}<span className="text-xs font-normal text-muted-foreground">/{shotsWithVideo}</span></div>
+                      <Progress value={shotsWithVideo > 0 ? (shotsComposed / shotsWithVideo) * 100 : 0} className="h-1 mt-1.5" />
+                    </CardContent>
+                  </Card>
+                  <Card className="border-border/50 py-0 gap-0">
+                    <CardContent className="p-3 text-center">
+                      <div className="flex items-center justify-center gap-1.5 mb-1">
+                        <Clapperboard className="size-3.5 text-primary/70" />
+                        <span className="text-[10px] text-muted-foreground">总进度</span>
+                      </div>
+                      <div className="text-lg font-bold">{pipelinePercent}<span className="text-xs font-normal text-muted-foreground">%</span></div>
+                      <Progress value={pipelinePercent} className="h-1 mt-1.5" />
+                    </CardContent>
+                  </Card>
+                </>
+              )}
             </div>
 
-            {/* Merge result banner (when merge is completed) */}
-            {ffmpegAvailable && mergeStatus?.latestMerge?.mergedUrl && (
+            {/* Merge result banner — only in compose_merge */}
+            {config.showCompose && ffmpegAvailable && mergeStatus?.latestMerge?.mergedUrl && (
               <Card className="border-emerald-500/30 py-0 gap-0">
                 <CardContent className="p-3">
                   <div className="flex items-center justify-between">
@@ -219,78 +294,164 @@ export function ProductionPanel({
               </Card>
             )}
 
-            {/* Toolbar actions */}
+            {/* Toolbar actions — filtered by step */}
             <div className="flex items-center gap-2 flex-wrap">
-              {pendingVideoShots.length > 0 && (
+              {/* Dubbing step: TTS only */}
+              {config.showTts && !config.showVideo && (
                 <Button
                   size="sm"
-                  variant="outline"
+                  variant="default"
+                  onClick={handleGenerateAllTts}
+                  disabled={generatingAllTts || !!generatingTts || pendingTtsShots.length === 0}
+                  className="amber-glow"
+                >
+                  {generatingAllTts || generatingTts ? <Loader2 className="size-3.5 animate-spin" /> : <Music className="size-3.5" />}
+                  生成全部配音
+                  {pendingTtsShots.length > 0 && (
+                    <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-1">{pendingTtsShots.length}</Badge>
+                  )}
+                </Button>
+              )}
+              {/* Video step: Video only */}
+              {config.showVideo && !config.showTts && pendingVideoShots.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="default"
                   onClick={handleGenerateAllVideos}
                   disabled={!!generatingVideo || !!generatingShotImg}
+                  className="amber-glow"
                 >
                   {generatingVideo ? <Loader2 className="size-3.5 animate-spin" /> : <Video className="size-3.5" />}
                   生成全部视频
                   <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-1">{pendingVideoShots.length}</Badge>
                 </Button>
               )}
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleGenerateAllTts}
-                disabled={generatingAllTts || !!generatingTts || pendingTtsShots.length === 0}
-              >
-                {generatingAllTts || generatingTts ? <Loader2 className="size-3.5 animate-spin" /> : <Music className="size-3.5" />}
-                生成全部配音
-                {pendingTtsShots.length > 0 && (
-                  <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-1">{pendingTtsShots.length}</Badge>
-                )}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleComposeAll}
-                disabled={composingAll || !!composing || shotsWithVideo === 0}
-                className="amber-glow"
-              >
-                {composingAll || composing ? <Loader2 className="size-3.5 animate-spin" /> : <Layers className="size-3.5" />}
-                一键合成（{composeMode}）
-              </Button>
-              {ffmpegAvailable && (canMerge || canMergePartial) && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleServerMerge}
-                  disabled={merging || !canMergePartial}
-                  className="amber-glow"
-                >
-                  {merging ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
-                  合并成片
-                  {mergeStatus?.latestMerge?.mergedUrl && (
-                    <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-1 bg-emerald-500/15 text-emerald-600">
-                      已合并
-                    </Badge>
+              {/* Compose step: compose + merge */}
+              {config.showCompose && !config.showTts && !config.showVideo && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="default"
+                    onClick={handleComposeAll}
+                    disabled={composingAll || !!composing || shotsWithVideo === 0}
+                    className="amber-glow"
+                  >
+                    {composingAll || composing ? <Loader2 className="size-3.5 animate-spin" /> : <Layers className="size-3.5" />}
+                    一键合成（{composeMode}）
+                  </Button>
+                  {ffmpegAvailable && (canMerge || canMergePartial) && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleServerMerge}
+                      disabled={merging || !canMergePartial}
+                      className="amber-glow"
+                    >
+                      {merging ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
+                      合并成片
+                      {mergeStatus?.latestMerge?.mergedUrl && (
+                        <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-1 bg-emerald-500/15 text-emerald-600">
+                          已合并
+                        </Badge>
+                      )}
+                    </Button>
                   )}
-                </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleStartPreview}
+                    disabled={videoShots.length === 0}
+                  >
+                    <Eye className="size-3.5" />
+                    预览完整视频
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleExport}
+                    disabled={exporting || videoShots.length === 0}
+                    className={perms.canExport ? 'amber-glow' : ''}
+                    variant={perms.canExport ? 'default' : 'outline'}
+                  >
+                    {exporting ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
+                    {perms.canExport ? '导出成片' : '导出（需专业版）'}
+                  </Button>
+                </>
               )}
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleStartPreview}
-                disabled={videoShots.length === 0}
-              >
-                <Eye className="size-3.5" />
-                预览完整视频
-              </Button>
-              <Button
-                size="sm"
-                onClick={handleExport}
-                disabled={exporting || videoShots.length === 0}
-                className={perms.canExport ? 'amber-glow' : ''}
-                variant={perms.canExport ? 'default' : 'outline'}
-              >
-                {exporting ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
-                {perms.canExport ? '导出成片' : '导出（需专业版）'}
-              </Button>
+              {/* Full production mode (all) */}
+              {config.showTts && config.showVideo && config.showCompose && (
+                <>
+                  {pendingVideoShots.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleGenerateAllVideos}
+                      disabled={!!generatingVideo || !!generatingShotImg}
+                    >
+                      {generatingVideo ? <Loader2 className="size-3.5 animate-spin" /> : <Video className="size-3.5" />}
+                      生成全部视频
+                      <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-1">{pendingVideoShots.length}</Badge>
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleGenerateAllTts}
+                    disabled={generatingAllTts || !!generatingTts || pendingTtsShots.length === 0}
+                  >
+                    {generatingAllTts || generatingTts ? <Loader2 className="size-3.5 animate-spin" /> : <Music className="size-3.5" />}
+                    生成全部配音
+                    {pendingTtsShots.length > 0 && (
+                      <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-1">{pendingTtsShots.length}</Badge>
+                    )}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleComposeAll}
+                    disabled={composingAll || !!composing || shotsWithVideo === 0}
+                    className="amber-glow"
+                  >
+                    {composingAll || composing ? <Loader2 className="size-3.5 animate-spin" /> : <Layers className="size-3.5" />}
+                    一键合成（{composeMode}）
+                  </Button>
+                  {ffmpegAvailable && (canMerge || canMergePartial) && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleServerMerge}
+                      disabled={merging || !canMergePartial}
+                      className="amber-glow"
+                    >
+                      {merging ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
+                      合并成片
+                      {mergeStatus?.latestMerge?.mergedUrl && (
+                        <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-1 bg-emerald-500/15 text-emerald-600">
+                          已合并
+                        </Badge>
+                      )}
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleStartPreview}
+                    disabled={videoShots.length === 0}
+                  >
+                    <Eye className="size-3.5" />
+                    预览完整视频
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleExport}
+                    disabled={exporting || videoShots.length === 0}
+                    className={perms.canExport ? 'amber-glow' : ''}
+                    variant={perms.canExport ? 'default' : 'outline'}
+                  >
+                    {exporting ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
+                    {perms.canExport ? '导出成片' : '导出（需专业版）'}
+                  </Button>
+                </>
+              )}
             </div>
 
             {/* Timeline view — with video players */}
@@ -360,23 +521,35 @@ export function ProductionPanel({
                                 </Badge>
                               )}
                             </div>
-                            {/* Pipeline progress with icons */}
+                            {/* Pipeline progress with icons — filtered by step */}
                             <div className="flex items-center gap-1.5 text-[10px] mb-2">
-                              <span className={`inline-flex items-center gap-0.5 ${hasImage ? 'text-emerald-500 font-medium' : 'text-muted-foreground/40'}`}>
-                                <ImageIcon className="size-2.5" /> 图片
-                              </span>
-                              <ChevronRight className="size-2 text-muted-foreground/30" />
-                              <span className={`inline-flex items-center gap-0.5 ${hasVideo ? 'text-emerald-500 font-medium' : 'text-muted-foreground/40'}`}>
-                                <Video className="size-2.5" /> 视频
-                              </span>
-                              <ChevronRight className="size-2 text-muted-foreground/30" />
-                              <span className={`inline-flex items-center gap-0.5 ${hasTts ? 'text-emerald-500 font-medium' : sb.dialogue ? 'text-amber-500' : 'text-muted-foreground/40'}`}>
-                                <Mic className="size-2.5" /> 配音
-                              </span>
-                              <ChevronRight className="size-2 text-muted-foreground/30" />
-                              <span className={`inline-flex items-center gap-0.5 ${isComposed ? 'text-emerald-500 font-medium' : 'text-muted-foreground/40'}`}>
-                                <Layers className="size-2.5" /> 合成
-                              </span>
+                              {config.showVideo && (
+                                <>
+                                  <span className={`inline-flex items-center gap-0.5 ${hasImage ? 'text-emerald-500 font-medium' : 'text-muted-foreground/40'}`}>
+                                    <ImageIcon className="size-2.5" /> 图片
+                                  </span>
+                                  <ChevronRight className="size-2 text-muted-foreground/30" />
+                                  <span className={`inline-flex items-center gap-0.5 ${hasVideo ? 'text-emerald-500 font-medium' : 'text-muted-foreground/40'}`}>
+                                    <Video className="size-2.5" /> 视频
+                                  </span>
+                                </>
+                              )}
+                              {config.showTts && (
+                                <>
+                                  {config.showVideo && <ChevronRight className="size-2 text-muted-foreground/30" />}
+                                  <span className={`inline-flex items-center gap-0.5 ${hasTts ? 'text-emerald-500 font-medium' : sb.dialogue ? 'text-amber-500' : 'text-muted-foreground/40'}`}>
+                                    <Mic className="size-2.5" /> 配音
+                                  </span>
+                                </>
+                              )}
+                              {config.showCompose && (
+                                <>
+                                  <ChevronRight className="size-2 text-muted-foreground/30" />
+                                  <span className={`inline-flex items-center gap-0.5 ${isComposed ? 'text-emerald-500 font-medium' : 'text-muted-foreground/40'}`}>
+                                    <Layers className="size-2.5" /> 合成
+                                  </span>
+                                </>
+                              )}
                             </div>
                             {/* Subtitle preview */}
                             {sb.dialogue && (
@@ -387,9 +560,10 @@ export function ProductionPanel({
                             )}
                           </div>
 
-                          {/* Per-shot actions */}
+                          {/* Per-shot actions — filtered by step */}
                           <div className="flex items-center gap-1 flex-shrink-0 flex-wrap">
-                            {!hasImage && sb.imagePrompt && (
+                            {/* Image generation — only in video step */}
+                            {config.showVideo && !config.showTts && !hasImage && sb.imagePrompt && (
                               <Button
                                 size="sm"
                                 variant="ghost"
@@ -402,8 +576,8 @@ export function ProductionPanel({
                                 图片
                               </Button>
                             )}
-                            {/* Video generation — works with OR without firstFrameUrl */}
-                            {!hasVideo && (sb.videoPrompt || sb.imagePrompt) && (
+                            {/* Video generation — in video step */}
+                            {config.showVideo && !config.showTts && !hasVideo && (sb.videoPrompt || sb.imagePrompt) && (
                               <Button
                                 size="sm"
                                 variant="ghost"
@@ -416,20 +590,22 @@ export function ProductionPanel({
                                 {sb.firstFrameUrl ? '图生视频' : '文生视频'}
                               </Button>
                             )}
-                            {sb.dialogue && !hasTts && (
+                            {/* TTS generation — in dubbing step */}
+                            {config.showTts && !config.showVideo && sb.dialogue && !hasTts && (
                               <Button
                                 size="sm"
-                                variant="ghost"
-                                className="h-7 text-[10px] px-2"
+                                variant="default"
+                                className="h-7 text-[10px] px-2 amber-glow"
                                 onClick={() => handleGenerateTts(sb)}
                                 disabled={generatingTts === sb.id}
                                 title="生成配音"
                               >
                                 {generatingTts === sb.id ? <Loader2 className="size-3 animate-spin" /> : <Mic className="size-3" />}
-                                配音
+                                生成配音
                               </Button>
                             )}
-                            {hasVideo && !isComposed && (
+                            {/* Compose — in compose step */}
+                            {config.showCompose && !config.showTts && !config.showVideo && hasVideo && !isComposed && (
                               <Button
                                 size="sm"
                                 variant="secondary"
@@ -442,12 +618,69 @@ export function ProductionPanel({
                                 合成{ffmpegAvailable ? ' ✦' : ''}
                               </Button>
                             )}
+                            {/* Full production mode: all per-shot actions */}
+                            {config.showTts && config.showVideo && config.showCompose && (
+                              <>
+                                {!hasImage && sb.imagePrompt && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 text-[10px] px-2"
+                                    onClick={() => handleGenerateShotImage(sb)}
+                                    disabled={generatingShotImg === sb.id}
+                                    title="生成图片"
+                                  >
+                                    {generatingShotImg === sb.id ? <Loader2 className="size-3 animate-spin" /> : <ImageIcon className="size-3" />}
+                                    图片
+                                  </Button>
+                                )}
+                                {!hasVideo && (sb.videoPrompt || sb.imagePrompt) && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 text-[10px] px-2 text-primary hover:text-primary"
+                                    onClick={() => handleGenerateVideo(sb)}
+                                    disabled={generatingVideo === sb.id}
+                                    title={sb.firstFrameUrl ? '图生视频' : '文生视频'}
+                                  >
+                                    {generatingVideo === sb.id ? <Loader2 className="size-3 animate-spin" /> : <Video className="size-3" />}
+                                    {sb.firstFrameUrl ? '图生视频' : '文生视频'}
+                                  </Button>
+                                )}
+                                {sb.dialogue && !hasTts && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 text-[10px] px-2"
+                                    onClick={() => handleGenerateTts(sb)}
+                                    disabled={generatingTts === sb.id}
+                                    title="生成配音"
+                                  >
+                                    {generatingTts === sb.id ? <Loader2 className="size-3 animate-spin" /> : <Mic className="size-3" />}
+                                    配音
+                                  </Button>
+                                )}
+                                {hasVideo && !isComposed && (
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    className="h-7 text-[10px] px-2 amber-glow"
+                                    onClick={() => handleComposeShot(sb)}
+                                    disabled={composing === sb.id}
+                                    title={`合成（字幕+配音叠加）${ffmpegAvailable ? ' - FFmpeg' : ' - WebM'}`}
+                                  >
+                                    {composing === sb.id ? <Loader2 className="size-3 animate-spin" /> : <Layers className="size-3" />}
+                                    合成{ffmpegAvailable ? ' ✦' : ''}
+                                  </Button>
+                                )}
+                              </>
+                            )}
                           </div>
                         </div>
 
-                        {/* Audio player + composed video preview */}
+                        {/* Audio player + composed video preview — filtered by step */}
                         <div className="mt-2 pl-[124px] space-y-2">
-                          {sb.ttsAudioUrl && (
+                          {(config.showTts || (config.showTts && config.showVideo && config.showCompose)) && sb.ttsAudioUrl && (
                             <div className="flex items-center gap-2">
                               <Music className="size-3 text-primary/60 flex-shrink-0" />
                               <audio
@@ -458,7 +691,7 @@ export function ProductionPanel({
                               />
                             </div>
                           )}
-                          {sb.composedUrl && (
+                          {config.showCompose && sb.composedUrl && (
                             <div className="rounded overflow-hidden border border-emerald-500/20 max-w-md">
                               <video
                                 src={sb.composedUrl}
@@ -475,8 +708,8 @@ export function ProductionPanel({
               </div>
             </div>
 
-            {/* Sequence Preview */}
-            {previewMode && currentPreviewStoryboard && (
+            {/* Sequence Preview — only in compose_merge */}
+            {config.showCompose && previewMode && currentPreviewStoryboard && (
               <div className="border border-border/50 rounded-lg overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-2 bg-muted/30 border-b border-border/50">
                   <div className="flex items-center gap-2">

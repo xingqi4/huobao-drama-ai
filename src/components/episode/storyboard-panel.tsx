@@ -43,7 +43,7 @@ import {
 } from '@/components/ui/collapsible'
 import { AgentExecutionPanel } from '@/components/agent-execution-panel'
 import { statusBadge, shotTypeLabel, cameraAngleLabel, cameraMovementLabel } from './helpers'
-import type { StoryboardPanelProps, Storyboard, GridConfig, GridMode } from './types'
+import type { StoryboardPanelProps, Storyboard, GridConfig, GridMode, PipelineStepKey } from './types'
 import {
   Dialog,
   DialogContent,
@@ -208,6 +208,38 @@ const GRID_MODE_OPTIONS: { value: GridMode; label: string; description: string }
 
 // ── Main StoryboardPanel ──────────────────────────────────────
 
+// ── Step-aware configuration ────────────────────────────────────
+
+interface StoryboardStepConfig {
+  stepNumber: string
+  title: string
+  subtitle: string
+  focusOnGeneration: boolean
+  focusOnImages: boolean
+}
+
+function getStoryboardStepConfig(step: PipelineStepKey): StoryboardStepConfig {
+  switch (step) {
+    case 'shot_frames':
+      return {
+        stepNumber: '09',
+        title: '镜头帧图',
+        subtitle: '为每个镜头生成首帧图片，支持批量操作和宫格图',
+        focusOnGeneration: false,
+        focusOnImages: true,
+      }
+    case 'storyboard':
+    default:
+      return {
+        stepNumber: '05',
+        title: '分镜列表',
+        subtitle: '',
+        focusOnGeneration: true,
+        focusOnImages: false,
+      }
+  }
+}
+
 export function StoryboardPanel({
   storyboards,
   aiLoading,
@@ -221,6 +253,7 @@ export function StoryboardPanel({
   uploadingField,
   copiedField,
   gridState,
+  activePipelineStep,
   handleGenerateStoryboard,
   handleEnhanceShotPrompt,
   handleGenerateAllImages,
@@ -233,6 +266,7 @@ export function StoryboardPanel({
   handleUpdateStoryboard,
   handleGridGenerate,
 }: StoryboardPanelProps) {
+  const stepConfig = getStoryboardStepConfig(activePipelineStep)
   const [selectedShotId, setSelectedShotId] = useState<string | null>(
     storyboards.length > 0 ? storyboards[0].id : null
   )
@@ -253,11 +287,19 @@ export function StoryboardPanel({
           className="text-center max-w-md"
         >
           <div className="mx-auto size-16 rounded-full bg-primary/10 flex items-center justify-center mb-5">
-            <Film className="size-8 text-primary" />
+            {stepConfig.focusOnImages ? (
+              <Camera className="size-8 text-primary" />
+            ) : (
+              <Film className="size-8 text-primary" />
+            )}
           </div>
-          <h2 className="text-lg font-semibold mb-2">生成分镜</h2>
+          <h2 className="text-lg font-semibold mb-2">
+            {stepConfig.focusOnImages ? '镜头帧图' : '生成分镜'}
+          </h2>
           <p className="text-sm text-muted-foreground mb-6">
-            AI将把剧本拆解为单独的镜头，包含景别、运镜、动作描述和对白
+            {stepConfig.focusOnImages
+              ? '请先生成分镜列表，然后为每个镜头生成帧图片'
+              : 'AI将把剧本拆解为单独的镜头，包含景别、运镜、动作描述和对白'}
           </p>
           <Button
             onClick={handleGenerateStoryboard}
@@ -317,8 +359,13 @@ export function StoryboardPanel({
       {/* Toolbar */}
       <div className="flex items-center justify-between px-6 py-3 border-b border-border/50 flex-wrap gap-2">
         <div className="flex items-center gap-3">
-          <span className="text-xs font-mono text-primary/80">05</span>
-          <h2 className="text-sm font-semibold">分镜列表</h2>
+          <span className="text-xs font-mono text-primary/80">{stepConfig.stepNumber}</span>
+          <div>
+            <h2 className="text-sm font-semibold">{stepConfig.title}</h2>
+            {stepConfig.subtitle && (
+              <p className="text-[10px] text-muted-foreground">{stepConfig.subtitle}</p>
+            )}
+          </div>
           <Badge variant="secondary" className="text-[10px]">{storyboards.length} 镜</Badge>
           {episode?.storyboardStatus && statusBadge(episode.storyboardStatus)}
         </div>
@@ -330,27 +377,12 @@ export function StoryboardPanel({
               <Progress value={(batchProgress.current / batchProgress.total) * 100} className="h-1.5 w-20" />
             </div>
           )}
-          {pendingVideoShots.length > 0 && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleGenerateAllVideos}
-              disabled={!!generatingVideo || !!generatingShotImg || isGridBusy}
-              className="amber-glow"
-            >
-              {generatingVideo ? <Loader2 className="size-3.5 animate-spin" /> : <Video className="size-3.5" />}
-              生成全部视频
-              <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-1">
-                {pendingVideoShots.length}
-                {t2vShots.length > 0 && ` (文${t2vShots.length}+图${i2vShots.length})`}
-              </Badge>
-            </Button>
-          )}
-          {pendingImageShots.length > 0 && (
+          {/* shot_frames step: image-focused buttons */}
+          {stepConfig.focusOnImages && pendingImageShots.length > 0 && (
             <>
               <Button
                 size="sm"
-                variant="outline"
+                variant="default"
                 onClick={handleGenerateAllImages}
                 disabled={!!generatingShotImg || !!generatingVideo || isGridBusy}
                 className="amber-glow"
@@ -360,7 +392,7 @@ export function StoryboardPanel({
               </Button>
               <Button
                 size="sm"
-                variant="outline"
+                variant="default"
                 onClick={() => setGridDialogOpen(true)}
                 disabled={!!generatingShotImg || !!generatingVideo || isGridBusy}
                 className="amber-glow"
@@ -379,15 +411,69 @@ export function StoryboardPanel({
               </Button>
             </>
           )}
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleGenerateStoryboard}
-            disabled={aiLoading || isStoryboarding}
-          >
-            <RefreshCw className="size-3.5" />
-            重新生成
-          </Button>
+          {/* storyboard step: show all action buttons including video */}
+          {stepConfig.focusOnGeneration && (
+            <>
+              {pendingVideoShots.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleGenerateAllVideos}
+                  disabled={!!generatingVideo || !!generatingShotImg || isGridBusy}
+                  className="amber-glow"
+                >
+                  {generatingVideo ? <Loader2 className="size-3.5 animate-spin" /> : <Video className="size-3.5" />}
+                  生成全部视频
+                  <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-1">
+                    {pendingVideoShots.length}
+                    {t2vShots.length > 0 && ` (文${t2vShots.length}+图${i2vShots.length})`}
+                  </Badge>
+                </Button>
+              )}
+              {pendingImageShots.length > 0 && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleGenerateAllImages}
+                    disabled={!!generatingShotImg || !!generatingVideo || isGridBusy}
+                    className="amber-glow"
+                  >
+                    {generatingShotImg ? <Loader2 className="size-3.5 animate-spin" /> : <ImageIcon className="size-3.5" />}
+                    生成全部图片
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setGridDialogOpen(true)}
+                    disabled={!!generatingShotImg || !!generatingVideo || isGridBusy}
+                    className="amber-glow"
+                  >
+                    {isGridBusy ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : gridState.isSplittingGrid ? (
+                      <SplitSquareHorizontal className="size-3.5" />
+                    ) : (
+                      <Grid3X3 className="size-3.5" />
+                    )}
+                    宫格图生成
+                    <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-1">
+                      {pendingImageShots.length}
+                    </Badge>
+                  </Button>
+                </>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleGenerateStoryboard}
+                disabled={aiLoading || isStoryboarding}
+              >
+                <RefreshCw className="size-3.5" />
+                重新生成
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -520,106 +606,114 @@ export function StoryboardPanel({
                   </div>
                 )}
 
-                {/* Section 1: Shot Structure */}
-                <DetailSection title="镜头结构" icon={<Film className="size-3 text-primary" />}>
-                  <div className="grid grid-cols-2 gap-3">
-                    <InlineField
-                      label="标题"
-                      value={selectedShot.title}
-                      onSave={(v) => handleUpdateStoryboard(selectedShot.id, { title: v })}
-                      copiedField={copiedField}
-                      fieldId={`sb-title-${selectedShot.id}`}
-                      onCopy={handleCopy}
-                      placeholder="镜头标题"
-                    />
-                    <InlineField
-                      label="景别"
-                      value={shotTypeLabel(selectedShot.shotType)}
-                      onSave={(v) => handleUpdateStoryboard(selectedShot.id, { shotType: v })}
-                      copiedField={copiedField}
-                      fieldId={`sb-shottype-${selectedShot.id}`}
-                      onCopy={handleCopy}
-                      placeholder="medium"
-                    />
-                    <InlineField
-                      label="角度"
-                      value={cameraAngleLabel(selectedShot.cameraAngle)}
-                      onSave={(v) => handleUpdateStoryboard(selectedShot.id, { cameraAngle: v })}
-                      copiedField={copiedField}
-                      fieldId={`sb-angle-${selectedShot.id}`}
-                      onCopy={handleCopy}
-                      placeholder="eye-level"
-                    />
-                    <InlineField
-                      label="运镜"
-                      value={cameraMovementLabel(selectedShot.cameraMovement)}
-                      onSave={(v) => handleUpdateStoryboard(selectedShot.id, { cameraMovement: v })}
-                      copiedField={copiedField}
-                      fieldId={`sb-movement-${selectedShot.id}`}
-                      onCopy={handleCopy}
-                      placeholder="static"
-                    />
-                    <InlineField
-                      label="时长 (秒)"
-                      value={String(selectedShot.duration)}
-                      onSave={(v) => handleUpdateStoryboard(selectedShot.id, { duration: parseFloat(v) || 3 })}
-                      copiedField={copiedField}
-                      fieldId={`sb-duration-${selectedShot.id}`}
-                      onCopy={handleCopy}
-                      placeholder="3"
-                    />
-                  </div>
-                </DetailSection>
-
-                {/* Section 2: Visual Semantics */}
-                <DetailSection title="视觉语义" icon={<Camera className="size-3 text-primary" />}>
-                  <div className="space-y-3">
-                    <InlineField
-                      label="动作描述"
-                      value={selectedShot.action}
-                      onSave={(v) => handleUpdateStoryboard(selectedShot.id, { action: v })}
-                      copiedField={copiedField}
-                      fieldId={`sb-action-${selectedShot.id}`}
-                      onCopy={handleCopy}
-                      multiline
-                      placeholder="描述画面中的动作..."
-                    />
-                    <InlineField
-                      label="描述"
-                      value={selectedShot.description}
-                      onSave={(v) => handleUpdateStoryboard(selectedShot.id, { description: v })}
-                      copiedField={copiedField}
-                      fieldId={`sb-desc-${selectedShot.id}`}
-                      onCopy={handleCopy}
-                      multiline
-                      placeholder="详细的视觉描述..."
-                    />
-                    <InlineField
-                      label="氛围"
-                      value={selectedShot.atmosphere}
-                      onSave={(v) => handleUpdateStoryboard(selectedShot.id, { atmosphere: v })}
-                      copiedField={copiedField}
-                      fieldId={`sb-atmo-${selectedShot.id}`}
-                      onCopy={handleCopy}
-                      placeholder="紧张、温馨、悬疑..."
-                    />
-                    {selectedShot.dialogue && (
+                {/* Section 1: Shot Structure — show only in storyboard mode */}
+                {stepConfig.focusOnGeneration && (
+                  <DetailSection title="镜头结构" icon={<Film className="size-3 text-primary" />}>
+                    <div className="grid grid-cols-2 gap-3">
                       <InlineField
-                        label={`对白${selectedShot.dialogueChar ? ` (${selectedShot.dialogueChar})` : ''}`}
-                        value={selectedShot.dialogue}
-                        onSave={(v) => handleUpdateStoryboard(selectedShot.id, { dialogue: v })}
+                        label="标题"
+                        value={selectedShot.title}
+                        onSave={(v) => handleUpdateStoryboard(selectedShot.id, { title: v })}
                         copiedField={copiedField}
-                        fieldId={`sb-dialogue-${selectedShot.id}`}
+                        fieldId={`sb-title-${selectedShot.id}`}
+                        onCopy={handleCopy}
+                        placeholder="镜头标题"
+                      />
+                      <InlineField
+                        label="景别"
+                        value={shotTypeLabel(selectedShot.shotType)}
+                        onSave={(v) => handleUpdateStoryboard(selectedShot.id, { shotType: v })}
+                        copiedField={copiedField}
+                        fieldId={`sb-shottype-${selectedShot.id}`}
+                        onCopy={handleCopy}
+                        placeholder="medium"
+                      />
+                      <InlineField
+                        label="角度"
+                        value={cameraAngleLabel(selectedShot.cameraAngle)}
+                        onSave={(v) => handleUpdateStoryboard(selectedShot.id, { cameraAngle: v })}
+                        copiedField={copiedField}
+                        fieldId={`sb-angle-${selectedShot.id}`}
+                        onCopy={handleCopy}
+                        placeholder="eye-level"
+                      />
+                      <InlineField
+                        label="运镜"
+                        value={cameraMovementLabel(selectedShot.cameraMovement)}
+                        onSave={(v) => handleUpdateStoryboard(selectedShot.id, { cameraMovement: v })}
+                        copiedField={copiedField}
+                        fieldId={`sb-movement-${selectedShot.id}`}
+                        onCopy={handleCopy}
+                        placeholder="static"
+                      />
+                      <InlineField
+                        label="时长 (秒)"
+                        value={String(selectedShot.duration)}
+                        onSave={(v) => handleUpdateStoryboard(selectedShot.id, { duration: parseFloat(v) || 3 })}
+                        copiedField={copiedField}
+                        fieldId={`sb-duration-${selectedShot.id}`}
+                        onCopy={handleCopy}
+                        placeholder="3"
+                      />
+                    </div>
+                  </DetailSection>
+                )}
+
+                {/* Section 2: Visual Semantics — show only in storyboard mode */}
+                {stepConfig.focusOnGeneration && (
+                  <DetailSection title="视觉语义" icon={<Camera className="size-3 text-primary" />}>
+                    <div className="space-y-3">
+                      <InlineField
+                        label="动作描述"
+                        value={selectedShot.action}
+                        onSave={(v) => handleUpdateStoryboard(selectedShot.id, { action: v })}
+                        copiedField={copiedField}
+                        fieldId={`sb-action-${selectedShot.id}`}
                         onCopy={handleCopy}
                         multiline
-                        placeholder="对白内容..."
+                        placeholder="描述画面中的动作..."
                       />
-                    )}
-                  </div>
-                </DetailSection>
+                      <InlineField
+                        label="描述"
+                        value={selectedShot.description}
+                        onSave={(v) => handleUpdateStoryboard(selectedShot.id, { description: v })}
+                        copiedField={copiedField}
+                        fieldId={`sb-desc-${selectedShot.id}`}
+                        onCopy={handleCopy}
+                        multiline
+                        placeholder="详细的视觉描述..."
+                      />
+                      <InlineField
+                        label="氛围"
+                        value={selectedShot.atmosphere}
+                        onSave={(v) => handleUpdateStoryboard(selectedShot.id, { atmosphere: v })}
+                        copiedField={copiedField}
+                        fieldId={`sb-atmo-${selectedShot.id}`}
+                        onCopy={handleCopy}
+                        placeholder="紧张、温馨、悬疑..."
+                      />
+                      {selectedShot.dialogue && (
+                        <InlineField
+                          label={`对白${selectedShot.dialogueChar ? ` (${selectedShot.dialogueChar})` : ''}`}
+                          value={selectedShot.dialogue}
+                          onSave={(v) => handleUpdateStoryboard(selectedShot.id, { dialogue: v })}
+                          copiedField={copiedField}
+                          fieldId={`sb-dialogue-${selectedShot.id}`}
+                          onCopy={handleCopy}
+                          multiline
+                          placeholder="对白内容..."
+                        />
+                      )}
+                    </div>
+                  </DetailSection>
+                )}
 
-                {/* Section 3: Generation Prompts */}
-                <DetailSection title="生成提示词" icon={<Sparkles className="size-3 text-primary" />} defaultOpen={true}>
+                {/* Section 3: Generation Prompts — collapsed in shot_frames mode */}
+                <DetailSection
+                  title="生成提示词"
+                  icon={<Sparkles className="size-3 text-primary" />}
+                  defaultOpen={stepConfig.focusOnGeneration}
+                >
                   <div className="space-y-3">
                     <InlineField
                       label="图片提示词 (Image Prompt)"
@@ -662,9 +756,9 @@ export function StoryboardPanel({
                   </div>
                 </DetailSection>
 
-                {/* Section 4: Frame Images */}
+                {/* Section 4: Frame Images — always open, larger in shot_frames mode */}
                 <DetailSection title="帧图片" icon={<Layers className="size-3 text-primary" />} defaultOpen={true}>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className={`grid gap-4 ${stepConfig.focusOnImages ? 'grid-cols-1' : 'grid-cols-2'}`}>
                     {/* First Frame */}
                     <div className="space-y-2">
                       <label className="text-[10px] font-medium text-muted-foreground">首帧 (First Frame)</label>
@@ -673,11 +767,11 @@ export function StoryboardPanel({
                           <img
                             src={selectedShot.firstFrameUrl}
                             alt="首帧"
-                            className="w-full aspect-video object-cover"
+                            className={`w-full object-cover ${stepConfig.focusOnImages ? 'max-h-80' : 'aspect-video'}`}
                           />
                         </div>
                       ) : (
-                        <div className="aspect-video rounded-lg bg-muted/50 border border-dashed border-border/50 flex items-center justify-center">
+                        <div className={`rounded-lg bg-muted/50 border border-dashed border-border/50 flex items-center justify-center ${stepConfig.focusOnImages ? 'aspect-video' : 'aspect-video'}`}>
                           <div className="text-center">
                             <Camera className="size-5 text-muted-foreground/30 mx-auto mb-1" />
                             <p className="text-[10px] text-muted-foreground/50">暂无首帧</p>
@@ -685,41 +779,39 @@ export function StoryboardPanel({
                         </div>
                       )}
                       <div className="flex items-center gap-1">
-                        {selectedShot.imagePrompt && !selectedShot.firstFrameUrl && (
+                        {selectedShot.imagePrompt && (
                           <Button
                             size="sm"
-                            variant="secondary"
+                            variant={stepConfig.focusOnImages ? 'default' : 'secondary'}
                             onClick={() => handleGenerateShotImage(selectedShot)}
                             disabled={generatingShotImg === selectedShot.id}
-                            className="h-6 text-[10px] px-2 gap-1"
+                            className={`gap-1 ${stepConfig.focusOnImages ? 'amber-glow' : 'h-6 text-[10px] px-2'}`}
                           >
                             {generatingShotImg === selectedShot.id ? (
                               <Loader2 className="size-2.5 animate-spin" />
                             ) : (
                               <ImagePlus className="size-2.5" />
                             )}
-                            生成
+                            {selectedShot.firstFrameUrl ? '重新生成' : '生成'}
                           </Button>
                         )}
-                        {!selectedShot.firstFrameUrl && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-6 text-[10px] px-2 gap-1 text-muted-foreground"
-                            disabled={uploadingField === `sb-img-${selectedShot.id}`}
-                            onClick={() => {
-                              const input = document.getElementById(`upload-sb-img-${selectedShot.id}`) as HTMLInputElement
-                              input?.click()
-                            }}
-                          >
-                            {uploadingField === `sb-img-${selectedShot.id}` ? (
-                              <Loader2 className="size-2.5 animate-spin" />
-                            ) : (
-                              <Upload className="size-2.5" />
-                            )}
-                            上传
-                          </Button>
-                        )}
+                        <Button
+                          size="sm"
+                          variant={stepConfig.focusOnImages ? 'outline' : 'ghost'}
+                          className={`gap-1 ${stepConfig.focusOnImages ? '' : 'h-6 text-[10px] px-2 text-muted-foreground'}`}
+                          disabled={uploadingField === `sb-img-${selectedShot.id}`}
+                          onClick={() => {
+                            const input = document.getElementById(`upload-sb-img-${selectedShot.id}`) as HTMLInputElement
+                            input?.click()
+                          }}
+                        >
+                          {uploadingField === `sb-img-${selectedShot.id}` ? (
+                            <Loader2 className="size-2.5 animate-spin" />
+                          ) : (
+                            <Upload className="size-2.5" />
+                          )}
+                          上传
+                        </Button>
                       </div>
                     </div>
 
@@ -878,9 +970,9 @@ export function StoryboardPanel({
                     </div>
                   )}
 
-                  {/* Action buttons */}
+                  {/* Action buttons — show only relevant ones per step */}
                   <div className="mt-3 flex items-center gap-1.5 flex-wrap">
-                    {!selectedShot.videoUrl && (selectedShot.videoPrompt || selectedShot.imagePrompt) && (
+                    {stepConfig.focusOnGeneration && !selectedShot.videoUrl && (selectedShot.videoPrompt || selectedShot.imagePrompt) && (
                       <Button
                         size="sm"
                         variant="secondary"
@@ -896,7 +988,7 @@ export function StoryboardPanel({
                         {selectedShot.firstFrameUrl ? '图生视频' : '文生视频'}
                       </Button>
                     )}
-                    {selectedShot.dialogue && !selectedShot.ttsAudioUrl && (
+                    {stepConfig.focusOnGeneration && selectedShot.dialogue && !selectedShot.ttsAudioUrl && (
                       <Button
                         size="sm"
                         variant="secondary"

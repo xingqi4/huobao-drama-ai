@@ -1465,6 +1465,7 @@ export function EpisodeWorkspace() {
             generatingSceneImg={generatingSceneImg}
             batchProgress={batchProgress}
             uploadingField={uploadingField}
+            activePipelineStep={activePipelineStep}
             handleExtract={handleExtract}
             handleGenerateAllExtractImages={handleGenerateAllExtractImages}
             handleGenerateCharSheet={handleGenerateCharSheet}
@@ -1505,6 +1506,7 @@ export function EpisodeWorkspace() {
             uploadingField={uploadingField}
             copiedField={copiedField}
             gridState={gridState}
+            activePipelineStep={activePipelineStep}
             handleGenerateStoryboard={handleGenerateStoryboard}
             handleEnhanceShotPrompt={handleEnhanceShotPrompt}
             handleGenerateAllImages={handleGenerateAllImages}
@@ -1541,6 +1543,7 @@ export function EpisodeWorkspace() {
             ffmpegAvailable={ffmpegAvailable}
             merging={merging}
             mergeStatus={mergeStatus}
+            activePipelineStep={activePipelineStep}
             handleGenerateShotImage={handleGenerateShotImage}
             handleGenerateVideo={handleGenerateVideo}
             handleGenerateTts={handleGenerateTts}
