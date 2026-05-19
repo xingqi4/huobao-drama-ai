@@ -168,3 +168,23 @@ Stage Summary:
 - GET /api/health hides sensitive info (AI provider vars, DB URLs) for non-admin
 - Frontend: Settings button hidden from non-admin, all config inputs disabled, Agent tab hidden
 - write-only key handling: masked keys sent back to backend are detected and preserved
+
+---
+Task ID: 1
+Agent: main
+Task: 修复免费用户API Key配置功能的Bug并推送代码
+
+Work Log:
+- 分析项目结构，发现免费用户API Key配置的基础设施已存在（UserProvider模型、API路由、前端组件）
+- 发现之前commit "feat: 允许免费用户配置自己的API Key" 已存在，但代码未正确推送
+- 修复3个关键Bug：
+  1. UserProviderCard缺少category prop - provider为null时category为空字符串导致保存失败
+  2. handleSetActiveUserProvider发送apiKey:'' - 切换激活供应商时会覆盖已有key为空
+  3. 后端user-provider API - 更新时用空字符串覆盖已有apiKey
+- 为UserProviderCard添加测试连接按钮和结果显示（之前只有保存和删除按钮）
+- 推送代码到GitHub（Vercel自动部署）
+
+Stage Summary:
+- 修复了3个Bug，确保免费用户可以正确配置自己的API Key
+- 测试连接按钮已添加到UserProviderCard
+- 代码已推送：996b041 fix: 修复免费用户API Key配置的多个Bug
