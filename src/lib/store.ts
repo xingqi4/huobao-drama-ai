@@ -24,6 +24,13 @@ export interface DramaDetail extends Drama {
   scenes: Scene[]
 }
 
+export interface LockedConfig {
+  llm?: string
+  image?: string
+  video?: string
+  tts?: string
+}
+
 export interface Episode {
   id: string
   dramaId: string
@@ -35,6 +42,7 @@ export interface Episode {
   extractStatus: string
   storyboardStatus: string
   status: string
+  lockedConfig: string | null
   videoUrl: string | null
   duration: number
   createdAt: string
@@ -146,6 +154,11 @@ interface AppStore {
   setWorkspaceModel: (category: keyof WorkspaceModels, model: string) => void
   initWorkspaceModels: (models: Partial<WorkspaceModels>) => void
 
+  // Episode-level locked config
+  episodeLockedConfig: LockedConfig | null
+  setEpisodeLockedConfig: (config: LockedConfig | null) => void
+  isConfigLocked: () => boolean
+
   // Loading states
   loading: boolean
   setLoading: (loading: boolean) => void
@@ -181,6 +194,7 @@ export const useAppStore = create<AppStore>((set) => ({
       selectedEpisodeId: null,
       currentDrama: null,
       currentEpisode: null,
+      episodeLockedConfig: null,
     }),
 
   navigateToProject: (dramaId: string) =>
@@ -189,6 +203,7 @@ export const useAppStore = create<AppStore>((set) => ({
       selectedDramaId: dramaId,
       selectedEpisodeId: null,
       currentEpisode: null,
+      episodeLockedConfig: null,
     }),
 
   navigateToEpisode: (dramaId: string, episodeId: string) =>
@@ -203,6 +218,7 @@ export const useAppStore = create<AppStore>((set) => ({
       view: 'settings',
       selectedDramaId: null,
       selectedEpisodeId: null,
+      episodeLockedConfig: null,
     }),
 
   // Drama data cache
@@ -233,6 +249,14 @@ export const useAppStore = create<AppStore>((set) => ({
       try { localStorage.setItem('workspaceModels', JSON.stringify(updated)) } catch {}
       return { workspaceModels: updated }
     }),
+
+  // Episode-level locked config
+  episodeLockedConfig: null,
+  setEpisodeLockedConfig: (config: LockedConfig | null) => set({ episodeLockedConfig: config }),
+  isConfigLocked: () => {
+    const state = useAppStore.getState()
+    return state.episodeLockedConfig !== null
+  },
 
   // Loading states
   loading: false,

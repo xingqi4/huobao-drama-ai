@@ -39,6 +39,9 @@ export function ProductionPanel({
   previewVideoRef,
   previewAudioRef,
   perms,
+  ffmpegAvailable,
+  merging,
+  mergeStatus,
   handleGenerateShotImage,
   handleGenerateVideo,
   handleGenerateTts,
@@ -46,6 +49,7 @@ export function ProductionPanel({
   handleGenerateAllTts,
   handleComposeShot,
   handleComposeAll,
+  handleServerMerge,
   handleStartPreview,
   handlePreviewEnded,
   handleExport,
@@ -73,6 +77,11 @@ export function ProductionPanel({
     ? Math.round(((shotsWithImage + shotsWithVideo + shotsWithTts + shotsComposed) / (totalShots * 4)) * 100)
     : 0
 
+  // Merge readiness
+  const canMerge = mergeStatus?.canMerge ?? (shotsComposed === totalShots && totalShots > 0)
+  const canMergePartial = mergeStatus?.canMergePartial ?? (shotsWithVideo > 0)
+  const composeMode = ffmpegAvailable ? 'FFmpeg' : 'WebM'
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -85,6 +94,17 @@ export function ProductionPanel({
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {/* FFmpeg availability indicator */}
+          <Badge
+            variant="secondary"
+            className={`text-[9px] px-1.5 py-0 gap-0.5 ${
+              ffmpegAvailable
+                ? 'bg-emerald-500/15 text-emerald-600 border-emerald-500/30'
+                : 'bg-muted text-muted-foreground border-border'
+            }`}
+          >
+            {ffmpegAvailable ? '服务端合成' : '客户端合成'}
+          </Badge>
           {batchProgress && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="size-3 animate-spin" />
@@ -171,6 +191,34 @@ export function ProductionPanel({
               </Card>
             </div>
 
+            {/* Merge result banner (when merge is completed) */}
+            {ffmpegAvailable && mergeStatus?.latestMerge?.mergedUrl && (
+              <Card className="border-emerald-500/30 py-0 gap-0">
+                <CardContent className="p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="size-7 rounded-full bg-emerald-500/15 flex items-center justify-center">
+                        <Film className="size-3.5 text-emerald-600" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-emerald-600">成片已合并</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {mergeStatus.latestMerge.duration != null
+                            ? `时长 ${mergeStatus.latestMerge.duration}秒`
+                            : '合并完成'}
+                        </p>
+                      </div>
+                    </div>
+                    <video
+                      src={mergeStatus.latestMerge.mergedUrl}
+                      controls
+                      className="h-16 rounded border border-border/50"
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Toolbar actions */}
             <div className="flex items-center gap-2 flex-wrap">
               {pendingVideoShots.length > 0 && (
@@ -205,8 +253,25 @@ export function ProductionPanel({
                 className="amber-glow"
               >
                 {composingAll || composing ? <Loader2 className="size-3.5 animate-spin" /> : <Layers className="size-3.5" />}
-                一键合成（字幕+配音）
+                一键合成（{composeMode}）
               </Button>
+              {ffmpegAvailable && (canMerge || canMergePartial) && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleServerMerge}
+                  disabled={merging || !canMergePartial}
+                  className="amber-glow"
+                >
+                  {merging ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
+                  合并成片
+                  {mergeStatus?.latestMerge?.mergedUrl && (
+                    <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-1 bg-emerald-500/15 text-emerald-600">
+                      已合并
+                    </Badge>
+                  )}
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="outline"
@@ -371,10 +436,10 @@ export function ProductionPanel({
                                 className="h-7 text-[10px] px-2 amber-glow"
                                 onClick={() => handleComposeShot(sb)}
                                 disabled={composing === sb.id}
-                                title="合成（字幕+配音叠加）"
+                                title={`合成（字幕+配音叠加）${ffmpegAvailable ? ' - FFmpeg' : ' - WebM'}`}
                               >
                                 {composing === sb.id ? <Loader2 className="size-3 animate-spin" /> : <Layers className="size-3" />}
-                                合成
+                                合成{ffmpegAvailable ? ' ✦' : ''}
                               </Button>
                             )}
                           </div>

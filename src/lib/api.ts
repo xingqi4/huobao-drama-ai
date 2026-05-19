@@ -766,6 +766,75 @@ export const api = {
       }),
   },
 
+  // ---- Grid Image Generation ----
+  grid: {
+    generate: (params: {
+      episodeId?: string
+      dramaId?: string
+      prompt: string
+      rows: number
+      cols: number
+      cellPrompts?: string[]
+      shotIds?: string[]
+      gridMode?: string
+    }) =>
+      request<{
+        imageUrl?: string
+        imageGenerationId?: string
+        status?: string
+        taskId?: string
+        size: string
+        rows: number
+        cols: number
+        message?: string
+      }>('/api/ai/grid/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      }),
+
+    split: (params: {
+      imageUrl: string
+      rows: number
+      cols: number
+      assignments: Array<{
+        cellIndex: number
+        storyboardId: string
+        frameType: 'first_frame' | 'last_frame'
+      }>
+    }) =>
+      request<{
+        cells: Array<{
+          index: number
+          imageUrl: string
+          assignedTo: string
+        }>
+        totalCells: number
+        assignedCount: number
+        rows: number
+        cols: number
+      }>('/api/ai/grid/split', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      }),
+
+    status: (taskId: string, imageGenerationId?: string) => {
+      const params = new URLSearchParams()
+      params.set('taskId', taskId)
+      if (imageGenerationId) params.set('imageGenerationId', imageGenerationId)
+      return request<{
+        status: 'pending' | 'processing' | 'completed' | 'failed'
+        imageUrl?: string
+        imageGenerationId?: string
+        size?: string
+        taskId?: string
+        error?: string
+        message?: string
+      }>(`/api/ai/grid/status?${params.toString()}`)
+    },
+  },
+
   // ---- Upload ----
   upload: {
     file: async (

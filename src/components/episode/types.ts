@@ -149,6 +149,22 @@ export interface VoicePanelProps {
   handleBatchGenerateSamples: () => Promise<void>
 }
 
+// ── Grid generation types ─────────────────────────────────────
+
+export type GridMode = 'first_frame' | 'first_last' | 'multi_ref'
+
+export interface GridConfig {
+  mode: GridMode
+  rows: number
+  cols: number
+}
+
+export interface GridGenerationState {
+  isGeneratingGrid: boolean
+  isSplittingGrid: boolean
+  gridConfig: GridConfig
+}
+
 export interface StoryboardPanelProps {
   storyboards: Storyboard[]
   aiLoading: boolean
@@ -161,6 +177,7 @@ export interface StoryboardPanelProps {
   batchProgress: BatchProgress | null
   uploadingField: string | null
   copiedField: string | null
+  gridState: GridGenerationState
   handleGenerateStoryboard: () => Promise<void>
   handleEnhanceShotPrompt: (storyboard: Storyboard) => Promise<void>
   handleGenerateAllImages: () => Promise<void>
@@ -171,6 +188,22 @@ export interface StoryboardPanelProps {
   handleUpload: (file: File, options: UploadOptions, fieldKey: string) => Promise<void>
   handleCopy: (text: string, fieldId: string) => Promise<void>
   handleUpdateStoryboard: (id: string, data: Partial<Storyboard>) => Promise<void>
+  handleGridGenerate: (config: GridConfig) => Promise<void>
+}
+
+// ── Merge status ──────────────────────────────────────────────
+
+export interface MergeStatus {
+  canMerge: boolean
+  canMergePartial: boolean
+  totalShots: number
+  composedShots: number
+  ffmpegAvailable: boolean
+  latestMerge: {
+    status: string
+    mergedUrl: string | null
+    duration: number | null
+  } | null
 }
 
 export interface ProductionPanelProps {
@@ -191,6 +224,9 @@ export interface ProductionPanelProps {
   previewVideoRef: React.RefObject<HTMLVideoElement | null>
   previewAudioRef: React.RefObject<HTMLAudioElement | null>
   perms: UserPermissions
+  ffmpegAvailable: boolean
+  merging: boolean
+  mergeStatus: MergeStatus | null
   handleGenerateShotImage: (storyboard: Storyboard) => Promise<void>
   handleGenerateVideo: (storyboard: Storyboard) => Promise<void>
   handleGenerateTts: (storyboard: Storyboard) => Promise<void>
@@ -198,6 +234,7 @@ export interface ProductionPanelProps {
   handleGenerateAllTts: () => Promise<void>
   handleComposeShot: (storyboard: Storyboard) => Promise<void>
   handleComposeAll: () => Promise<void>
+  handleServerMerge: () => Promise<void>
   handleStartPreview: () => void
   handlePreviewEnded: () => void
   handleExport: () => Promise<void>

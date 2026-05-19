@@ -3,8 +3,10 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  directUrl         = env("DIRECT_URL")
+  relationMode      = "prisma"
 }
 
 // ============ User (Auth) ============
@@ -56,6 +58,7 @@ model Episode {
   extractStatus String   @default("pending")
   storyboardStatus String @default("pending")
   status        String   @default("draft")
+  lockedConfig  String   @default("null")  // JSON: { llm?: string, image?: string, video?: string, tts?: string } — "null" = no lock
   videoUrl      String?
   duration      Int      @default(0)
   createdAt     DateTime @default(now())

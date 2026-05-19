@@ -20,13 +20,16 @@ import {
   Edit3,
   Save,
   X,
-  Music,
   Volume2,
   Layers,
   ImagePlus,
+  Grid3X3,
+  SplitSquareHorizontal,
+  Plus,
+  Trash2,
+  Bookmark,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Progress } from '@/components/ui/progress'
@@ -40,7 +43,23 @@ import {
 } from '@/components/ui/collapsible'
 import { AgentExecutionPanel } from '@/components/agent-execution-panel'
 import { statusBadge, shotTypeLabel, cameraAngleLabel, cameraMovementLabel } from './helpers'
-import type { StoryboardPanelProps, Storyboard } from './types'
+import type { StoryboardPanelProps, Storyboard, GridConfig, GridMode } from './types'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Label } from '@/components/ui/label'
 
 // ── Inline Editable Field ──────────────────────────────────────
 
@@ -171,6 +190,22 @@ function DetailSection({
   )
 }
 
+// ── Grid size options ─────────────────────────────────────────
+
+const GRID_SIZE_OPTIONS = [
+  { value: '2x2', label: '2×2 (4格)', rows: 2, cols: 2 },
+  { value: '2x3', label: '2×3 (6格)', rows: 2, cols: 3 },
+  { value: '3x3', label: '3×3 (9格)', rows: 3, cols: 3 },
+  { value: '3x4', label: '3×4 (12格)', rows: 3, cols: 4 },
+  { value: '4x4', label: '4×4 (16格)', rows: 4, cols: 4 },
+] as const
+
+const GRID_MODE_OPTIONS: { value: GridMode; label: string; description: string }[] = [
+  { value: 'first_frame', label: '首帧宫格', description: '每个宫格展示一个镜头的首帧画面' },
+  { value: 'first_last', label: '首末帧宫格', description: '奇数格为首帧，偶数格为末帧' },
+  { value: 'multi_ref', label: '多参考帧', description: '所有宫格来自同一场景，保持一致' },
+]
+
 // ── Main StoryboardPanel ──────────────────────────────────────
 
 export function StoryboardPanel({
@@ -185,6 +220,7 @@ export function StoryboardPanel({
   batchProgress,
   uploadingField,
   copiedField,
+  gridState,
   handleGenerateStoryboard,
   handleEnhanceShotPrompt,
   handleGenerateAllImages,
@@ -195,11 +231,17 @@ export function StoryboardPanel({
   handleUpload,
   handleCopy,
   handleUpdateStoryboard,
+  handleGridGenerate,
 }: StoryboardPanelProps) {
   const [selectedShotId, setSelectedShotId] = useState<string | null>(
     storyboards.length > 0 ? storyboards[0].id : null
   )
   const selectedShot = storyboards.find((s) => s.id === selectedShotId)
+
+  // Grid dialog state
+  const [gridDialogOpen, setGridDialogOpen] = useState(false)
+  const [gridMode, setGridMode] = useState<GridMode>('first_frame')
+  const [gridSize, setGridSize] = useState('2x2')
 
   // Empty state
   if (storyboards.length === 0 && !isStoryboarding && !aiLoading) {
@@ -253,6 +295,23 @@ export function StoryboardPanel({
   const t2vShots = pendingVideoShots.filter((s) => !s.firstFrameUrl)
   const i2vShots = pendingVideoShots.filter((s) => s.firstFrameUrl)
 
+  // Grid helpers
+  const selectedSizeOption = GRID_SIZE_OPTIONS.find((o) => o.value === gridSize) ?? GRID_SIZE_OPTIONS[0]!
+  const gridTotalCells = selectedSizeOption.rows * selectedSizeOption.cols
+  const gridShotsToUse = pendingImageShots.slice(0, gridTotalCells)
+
+  const handleStartGridGeneration = () => {
+    const config: GridConfig = {
+      mode: gridMode,
+      rows: selectedSizeOption.rows,
+      cols: selectedSizeOption.cols,
+    }
+    setGridDialogOpen(false)
+    handleGridGenerate(config)
+  }
+
+  const isGridBusy = gridState.isGeneratingGrid || gridState.isSplittingGrid
+
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar */}
@@ -276,7 +335,7 @@ export function StoryboardPanel({
               size="sm"
               variant="outline"
               onClick={handleGenerateAllVideos}
-              disabled={!!generatingVideo || !!generatingShotImg}
+              disabled={!!generatingVideo || !!generatingShotImg || isGridBusy}
               className="amber-glow"
             >
               {generatingVideo ? <Loader2 className="size-3.5 animate-spin" /> : <Video className="size-3.5" />}
@@ -288,16 +347,37 @@ export function StoryboardPanel({
             </Button>
           )}
           {pendingImageShots.length > 0 && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleGenerateAllImages}
-              disabled={!!generatingShotImg || !!generatingVideo}
-              className="amber-glow"
-            >
-              {generatingShotImg ? <Loader2 className="size-3.5 animate-spin" /> : <ImageIcon className="size-3.5" />}
-              生成全部图片
-            </Button>
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleGenerateAllImages}
+                disabled={!!generatingShotImg || !!generatingVideo || isGridBusy}
+                className="amber-glow"
+              >
+                {generatingShotImg ? <Loader2 className="size-3.5 animate-spin" /> : <ImageIcon className="size-3.5" />}
+                生成全部图片
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setGridDialogOpen(true)}
+                disabled={!!generatingShotImg || !!generatingVideo || isGridBusy}
+                className="amber-glow"
+              >
+                {isGridBusy ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : gridState.isSplittingGrid ? (
+                  <SplitSquareHorizontal className="size-3.5" />
+                ) : (
+                  <Grid3X3 className="size-3.5" />
+                )}
+                宫格图生成
+                <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-1">
+                  {pendingImageShots.length}
+                </Badge>
+              </Button>
+            </>
           )}
           <Button
             size="sm"
@@ -682,6 +762,109 @@ export function StoryboardPanel({
                     </div>
                   </div>
 
+                  {/* Reference Images */}
+                  <div className="mt-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-medium text-muted-foreground flex items-center gap-1">
+                        <Bookmark className="size-3" />
+                        参考图 (Reference Images)
+                      </label>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-5 text-[9px] px-1.5 gap-0.5 text-muted-foreground"
+                          onClick={() => {
+                            const input = document.getElementById(`upload-sb-ref-${selectedShot.id}`) as HTMLInputElement
+                            input?.click()
+                          }}
+                        >
+                          <Plus className="size-2.5" /> 添加
+                        </Button>
+                        {(() => {
+                          try {
+                            const refs = selectedShot.referenceImages ? JSON.parse(selectedShot.referenceImages) : []
+                            return Array.isArray(refs) && refs.length > 0 ? (
+                              <span className="text-[9px] text-muted-foreground">{refs.length}张</span>
+                            ) : null
+                          } catch { return null }
+                        })()}
+                      </div>
+                    </div>
+                    {(() => {
+                      try {
+                        const refs = selectedShot.referenceImages ? JSON.parse(selectedShot.referenceImages) : []
+                        if (!Array.isArray(refs) || refs.length === 0) {
+                          return (
+                            <div className="rounded-lg bg-muted/30 border border-dashed border-border/40 px-3 py-2">
+                              <p className="text-[10px] text-muted-foreground/60 text-center">
+                                参考图可用于保持角色/场景风格一致性
+                              </p>
+                            </div>
+                          )
+                        }
+                        return (
+                          <div className="grid grid-cols-3 gap-2">
+                            {refs.map((url: string, idx: number) => (
+                              <div key={idx} className="relative group rounded-md overflow-hidden border border-border/50">
+                                <img
+                                  src={url}
+                                  alt={`参考图 ${idx + 1}`}
+                                  className="w-full aspect-video object-cover"
+                                />
+                                <button
+                                  className="absolute top-0.5 right-0.5 size-4 rounded-full bg-destructive/80 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                  onClick={() => {
+                                    const newRefs = refs.filter((_: string, i: number) => i !== idx)
+                                    handleUpdateStoryboard(selectedShot.id, { referenceImages: JSON.stringify(newRefs) })
+                                  }}
+                                  title="移除"
+                                >
+                                  <Trash2 className="size-2" />
+                                </button>
+                                <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[8px] text-center py-0.5">
+                                  参考 {idx + 1}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )
+                      } catch {
+                        return null
+                      }
+                    })()}
+                    <input
+                      id={`upload-sb-ref-${selectedShot.id}`}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        const files = e.target.files
+                        if (!files || files.length === 0) return
+                        const existingRefs = (() => {
+                          try {
+                            const parsed = selectedShot.referenceImages ? JSON.parse(selectedShot.referenceImages) : []
+                            return Array.isArray(parsed) ? parsed : []
+                          } catch { return [] }
+                        })() as string[]
+                        const readPromises = Array.from(files).map(
+                          (file) =>
+                            new Promise<string>((resolve) => {
+                              const reader = new FileReader()
+                              reader.onload = () => resolve(reader.result as string)
+                              reader.readAsDataURL(file)
+                            })
+                        )
+                        Promise.all(readPromises).then((dataUrls) => {
+                          const newRefs = [...existingRefs, ...dataUrls]
+                          handleUpdateStoryboard(selectedShot.id, { referenceImages: JSON.stringify(newRefs) })
+                        })
+                        e.target.value = ''
+                      }}
+                    />
+                  </div>
+
                   {/* TTS Audio */}
                   {selectedShot.ttsAudioUrl && (
                     <div className="mt-3 flex items-center gap-2">
@@ -778,6 +961,112 @@ export function StoryboardPanel({
           )}
         </div>
       </div>
+
+      {/* Grid Configuration Dialog */}
+      <Dialog open={gridDialogOpen} onOpenChange={setGridDialogOpen}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Grid3X3 className="size-5 text-primary" />
+              宫格图批量生成
+            </DialogTitle>
+            <DialogDescription>
+              一次性生成多张镜头首帧，通过宫格图方式大幅提升效率
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-5 py-2">
+            {/* Grid Mode Selector */}
+            <div className="space-y-2">
+              <Label className="text-xs font-medium">生成模式</Label>
+              <Select value={gridMode} onValueChange={(v) => setGridMode(v as GridMode)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {GRID_MODE_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      <div className="flex flex-col">
+                        <span className="text-sm">{opt.label}</span>
+                        <span className="text-[10px] text-muted-foreground">{opt.description}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground">
+                {GRID_MODE_OPTIONS.find((o) => o.value === gridMode)?.description}
+              </p>
+            </div>
+
+            {/* Grid Size Selector */}
+            <div className="space-y-2">
+              <Label className="text-xs font-medium">宫格尺寸</Label>
+              <Select value={gridSize} onValueChange={setGridSize}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {GRID_SIZE_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Summary */}
+            <div className="rounded-lg bg-muted/50 border border-border/50 p-3 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">宫格容量</span>
+                <span className="font-medium">{gridTotalCells} 张</span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">待生成镜头</span>
+                <span className="font-medium">{pendingImageShots.length} 个</span>
+              </div>
+              <Separator />
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">本次生成</span>
+                <span className="font-semibold text-primary">
+                  {Math.min(gridShotsToUse.length, gridTotalCells)} 张图片一次性
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 mt-1">
+                <Grid3X3 className="size-3 text-emerald-500" />
+                <span className="text-[10px] text-emerald-600 font-medium">
+                  效率提升3-5倍 · 一次API调用生成全部
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setGridDialogOpen(false)}
+              className="text-xs"
+            >
+              取消
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleStartGridGeneration}
+              disabled={gridShotsToUse.length === 0 || isGridBusy}
+              className="amber-glow text-xs"
+            >
+              {isGridBusy ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Grid3X3 className="size-3.5" />
+              )}
+              开始生成
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

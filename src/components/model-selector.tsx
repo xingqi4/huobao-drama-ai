@@ -7,12 +7,13 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Sparkles, ImageIcon, Film, ChevronDown, Check, Volume2, Search } from 'lucide-react'
+import { Sparkles, ImageIcon, Film, ChevronDown, Check, Volume2, Search, Lock } from 'lucide-react'
 
 interface ModelSelectorProps {
   category: AiCategory
   value: string
   onChange: (model: string) => void
+  disabled?: boolean
 }
 
 const CATEGORY_CONFIG: Record<AiCategory, { icon: React.ReactNode; label: string; color: string }> = {
@@ -38,7 +39,7 @@ interface GroupedModels {
   models: (ModelOption & { providerName: string })[]
 }
 
-export function ModelSelector({ category, value, onChange }: ModelSelectorProps) {
+export function ModelSelector({ category, value, onChange, disabled }: ModelSelectorProps) {
   const [presets, setPresets] = useState<ProviderPreset[]>([])
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -103,12 +104,13 @@ export function ModelSelector({ category, value, onChange }: ModelSelectorProps)
   const currentProvider = currentModel?.providerName || ''
 
   return (
-    <Popover open={open} onOpenChange={(v) => { setOpen(v); if (!v) setSearch('') }}>
+    <Popover open={disabled ? false : open} onOpenChange={(v) => { if (disabled) return; setOpen(v); if (!v) setSearch('') }}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
           size="sm"
-          className="h-8 px-3 gap-1.5 text-xs font-medium hover:bg-muted/80"
+          disabled={disabled}
+          className={`h-8 px-3 gap-1.5 text-xs font-medium ${disabled ? 'opacity-60 cursor-not-allowed border-amber-700/40 bg-amber-950/20' : 'hover:bg-muted/80'}`}
         >
           <span className={catConfig.color}>{catConfig.icon}</span>
           <span className="max-w-[120px] sm:max-w-[160px] truncate">{displayName}</span>
@@ -117,7 +119,8 @@ export function ModelSelector({ category, value, onChange }: ModelSelectorProps)
               {currentProvider}
             </span>
           )}
-          <ChevronDown className="size-3 opacity-40 ml-0.5" />
+          {!disabled && <ChevronDown className="size-3 opacity-40 ml-0.5" />}
+          {disabled && <Lock className="size-3 text-amber-500 ml-0.5" />}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-80 p-0" align="end" sideOffset={4}>

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useAppStore, type EpisodeDetail, type Character, type Scene, type Storyboard } from '@/lib/store'
+import { useAppStore, type EpisodeDetail, type Character, type Scene, type Storyboard, type LockedConfig } from '@/lib/store'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
 import { usePermissions } from '@/hooks/use-permissions'
@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import {
   ArrowLeft,
   Loader2,
@@ -25,6 +26,8 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Mic,
+  Lock,
+  LockOpen,
 } from 'lucide-react'
 import { UserMenu } from '@/components/user-menu'
 
@@ -36,7 +39,7 @@ import { StoryboardPanel } from '@/components/episode/storyboard-panel'
 import { ProductionPanel } from '@/components/episode/production-panel'
 
 // Shared types & helpers
-import type { StepKey, StepDef, UploadOptions, BatchProgress, PipelineStepKey, PipelineStatus, VoiceInfo } from '@/components/episode/types'
+import type { StepKey, StepDef, UploadOptions, BatchProgress, PipelineStepKey, PipelineStatus, VoiceInfo, MergeStatus, GridConfig, GridGenerationState } from '@/components/episode/types'
 import { STEPS, PIPELINE_STEPS, PIPELINE_TO_STEP_MAP, statusBadge, panelVariants } from '@/components/episode/helpers'
 
 // ── Main component ───────────────────────────────────────────
@@ -87,14 +90,24 @@ export function EpisodeWorkspace() {
   const [generatingAllTts, setGeneratingAllTts] = useState(false)
   const [composing, setComposing] = useState<string | null>(null)
   const [composingAll, setComposingAll] = useState(false)
+  const [ffmpegAvailable, setFfmpegAvailable] = useState(false)
+  const [merging, setMerging] = useState(false)
+  const [mergeStatus, setMergeStatus] = useState<MergeStatus | null>(null)
   const [previewMode, setPreviewMode] = useState(false)
   const [currentPreviewShot, setCurrentPreviewShot] = useState(0)
   const [exporting, setExporting] = useState(false)
   const previewVideoRef = useRef<HTMLVideoElement>(null)
   const previewAudioRef = useRef<HTMLAudioElement>(null)
 
+  // Grid generation state
+  const [gridState, setGridState] = useState<GridGenerationState>({
+    isGeneratingGrid: false,
+    isSplittingGrid: false,
+    gridConfig: { mode: 'first_frame', rows: 2, cols: 2 },
+  })
+
   // Workspace model selection - persisted in global store + localStorage
-  const { workspaceModels, setWorkspaceModel, initWorkspaceModels } = useAppStore()
+  const { workspaceModels, setWorkspaceModel, initWorkspaceModels, episodeLockedConfig, setEpisodeLockedConfig } = useAppStore()
 
   // Initialize workspace models from active provider config (only fills empty fields)
   useEffect(() => {
@@ -107,6 +120,67 @@ export function EpisodeWorkspace() {
       })
     }).catch(() => {})
   }, [initWorkspaceModels])
+
+  // ── Parse & sync locked config from episode data ───────────
+  const isConfigLocked = episodeLockedConfig !== null
+
+  // When episode loads, parse lockedConfig and apply to workspace if locked
+  useEffect(() => {
+    if (!currentEpisode) return
+    const raw = currentEpisode.lockedConfig
+    if (raw && raw !== 'null') {
+      try {
+        const parsed: LockedConfig = JSON.parse(raw)
+        if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+          setEpisodeLockedConfig(parsed)
+          // Override workspace models with locked values
+          for (const [k, v] of Object.entries(parsed)) {
+            const key = k as keyof typeof workspaceModels
+            if (v && key in workspaceModels) {
+              setWorkspaceModel(key, v)
+            }
+          }
+          return
+        }
+      } catch { /* ignore parse errors */ }
+    }
+    // No valid lock — clear
+    setEpisodeLockedConfig(null)
+  }, [currentEpisode?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Lock / Unlock handlers ──────────────────────────────────
+  const handleLockConfig = async () => {
+    if (!selectedEpisodeId) return
+    const config: LockedConfig = {
+      llm: workspaceModels.llm || undefined,
+      image: workspaceModels.image || undefined,
+      video: workspaceModels.video || undefined,
+      tts: workspaceModels.tts || undefined,
+    }
+    // Remove undefined keys
+    const clean: LockedConfig = {}
+    for (const [k, v] of Object.entries(config)) {
+      if (v) (clean as Record<string, string>)[k] = v
+    }
+    try {
+      await api.episodes.update(selectedEpisodeId, { lockedConfig: JSON.stringify(clean) } as any)
+      setEpisodeLockedConfig(clean)
+      toast({ title: 'AI配置已锁定', description: '本集所有AI操作将使用锁定的模型' })
+    } catch (err) {
+      toast({ title: '锁定失败', description: String(err), variant: 'destructive' })
+    }
+  }
+
+  const handleUnlockConfig = async () => {
+    if (!selectedEpisodeId) return
+    try {
+      await api.episodes.update(selectedEpisodeId, { lockedConfig: 'null' } as any)
+      setEpisodeLockedConfig(null)
+      toast({ title: 'AI配置已解锁', description: '将使用全局默认模型' })
+    } catch (err) {
+      toast({ title: '解锁失败', description: String(err), variant: 'destructive' })
+    }
+  }
 
   // ── Fetch episode data ─────────────────────────────────────
 
@@ -154,6 +228,44 @@ export function EpisodeWorkspace() {
   useEffect(() => {
     fetchPipelineStatus()
   }, [rawContent, scriptContent, characters, scenes, storyboards, fetchPipelineStatus])
+
+  // ── Fetch merge status & FFmpeg availability ────────────────
+
+  const fetchMergeStatus = useCallback(async () => {
+    if (!selectedEpisodeId) return
+    try {
+      const res = await fetch(`/api/episodes/${selectedEpisodeId}/merge`)
+      if (res.ok) {
+        const data = await res.json()
+        setFfmpegAvailable(data.ffmpegAvailable ?? false)
+        setMergeStatus({
+          canMerge: data.canMerge ?? false,
+          canMergePartial: data.canMergePartial ?? false,
+          totalShots: data.shots?.total ?? 0,
+          composedShots: data.shots?.composed ?? 0,
+          ffmpegAvailable: data.ffmpegAvailable ?? false,
+          latestMerge: data.merge
+            ? {
+                status: data.merge.status,
+                mergedUrl: data.merge.mergedUrl,
+                duration: data.merge.duration,
+              }
+            : null,
+        })
+      }
+    } catch {
+      // Silently fail
+    }
+  }, [selectedEpisodeId])
+
+  useEffect(() => {
+    fetchMergeStatus()
+  }, [fetchMergeStatus])
+
+  // Re-fetch merge status when storyboards change
+  useEffect(() => {
+    fetchMergeStatus()
+  }, [storyboards, fetchMergeStatus])
 
   // ── Fetch available voices ───────────────────────────────────
 
@@ -495,6 +607,31 @@ export function EpisodeWorkspace() {
     throw new Error('生成超时，请稍后重试')
   }
 
+  // ── Client-side grid status polling helper ─────────────────
+
+  const pollGridStatus = async (
+    taskId: string,
+    imageGenerationId: string | undefined,
+    interval = 5000,
+    maxPolls = 60
+  ): Promise<{ imageUrl: string }> => {
+    for (let i = 0; i < maxPolls; i++) {
+      await new Promise((r) => setTimeout(r, interval))
+      try {
+        const result = await api.grid.status(taskId, imageGenerationId)
+        if (result.status === 'completed' && result.imageUrl) {
+          return { imageUrl: result.imageUrl }
+        }
+        if (result.status === 'failed') {
+          throw new Error(result.error || '宫格图生成失败')
+        }
+      } catch (err) {
+        if (i === maxPolls - 1) throw err
+      }
+    }
+    throw new Error('宫格图生成超时，请稍后重试')
+  }
+
   // ── AI: Generate scene image ───────────────────────────────
 
   const handleGenerateSceneImage = async (sceneId: string) => {
@@ -621,6 +758,105 @@ export function EpisodeWorkspace() {
     setBatchProgress(null)
     toast({ title: `${successCount}/${pending.length}个镜头图片生成完毕` })
     await fetchEpisode()
+  }
+
+  // ── AI: Grid image generation ──────────────────────────────
+
+  const handleGridGenerate = async (config: GridConfig) => {
+    if (!selectedEpisodeId) return
+    const { mode, rows, cols } = config
+    const totalCells = rows * cols
+
+    // Select shots without firstFrameUrl that have an imagePrompt
+    const pendingShots = storyboards.filter((s) => !s.firstFrameUrl && s.imagePrompt)
+    if (pendingShots.length === 0) {
+      toast({ title: '没有可生成宫格图的镜头（需要未生成图片且有提示词的镜头）' })
+      return
+    }
+
+    // Take up to totalCells shots
+    const shotsToUse = pendingShots.slice(0, totalCells)
+    if (shotsToUse.length === 0) {
+      toast({ title: '没有可用的镜头' })
+      return
+    }
+
+    setGridState((prev) => ({ ...prev, isGeneratingGrid: true, gridConfig: config }))
+    setBatchProgress({ current: 0, total: shotsToUse.length, message: '生成宫格图中...' })
+
+    try {
+      // Build cell prompts from shot imagePrompts
+      const cellPrompts = shotsToUse.map((s) => s.imagePrompt!)
+      const shotIds = shotsToUse.map((s) => s.id)
+
+      // Build combined grid prompt
+      const promptParts = cellPrompts.map((p, i) => `Cell [${Math.floor(i / cols) + 1},${(i % cols) + 1}] (position ${i + 1}): ${p}`)
+      const modeLabels: Record<string, string> = {
+        first_frame: 'Each cell depicts the FIRST FRAME (opening shot) of a storyboard sequence.',
+        first_last: 'Odd-numbered cells depict FIRST FRAMES, even-numbered cells depict LAST FRAMES.',
+        multi_ref: 'All cells are reference frames from the same scene. Maintain visual consistency.',
+      }
+      const combinedPrompt = [
+        `A ${rows}x${cols} grid layout image consisting of ${totalCells} evenly spaced cells.`,
+        'Each cell contains an independent cinematic film still, separated by thin white grid lines.',
+        modeLabels[mode] || modeLabels['first_frame']!,
+        '',
+        'Cell contents:',
+        ...promptParts,
+        '',
+        'IMPORTANT: Generate as a single image with visible grid structure. Consistent cinematic style, 8K quality.',
+      ].join('\n')
+
+      // Generate the grid image
+      const genResult = await api.grid.generate({
+        episodeId: selectedEpisodeId,
+        dramaId: selectedDramaId || undefined,
+        prompt: combinedPrompt,
+        rows,
+        cols,
+        cellPrompts,
+        shotIds,
+        gridMode: mode,
+      })
+
+      let gridImageUrl = genResult.imageUrl
+
+      // Handle async generation
+      if (genResult.status === 'processing' && genResult.taskId) {
+        setBatchProgress({ current: 0, total: shotsToUse.length, message: '宫格图异步生成中，等待结果...' })
+        const pollResult = await pollGridStatus(genResult.taskId, genResult.imageGenerationId)
+        gridImageUrl = pollResult.imageUrl
+      }
+
+      if (!gridImageUrl) {
+        throw new Error('宫格图生成完成但未返回图片')
+      }
+
+      // Split the grid image and assign to storyboards
+      setGridState((prev) => ({ ...prev, isGeneratingGrid: false, isSplittingGrid: true }))
+      setBatchProgress({ current: 0, total: shotsToUse.length, message: '分割宫格图中...' })
+
+      const assignments = shotsToUse.map((s, i) => ({
+        cellIndex: i,
+        storyboardId: s.id,
+        frameType: 'first_frame' as const,
+      }))
+
+      await api.grid.split({
+        imageUrl: gridImageUrl,
+        rows,
+        cols,
+        assignments,
+      })
+
+      toast({ title: `宫格图生成完成，已分配 ${shotsToUse.length} 张镜头图片` })
+    } catch (err) {
+      toast({ title: '宫格图生成失败', description: String(err), variant: 'destructive' })
+    } finally {
+      setGridState((prev) => ({ ...prev, isGeneratingGrid: false, isSplittingGrid: false }))
+      setBatchProgress(null)
+      await fetchEpisode()
+    }
   }
 
   // ── AI: Generate video for a storyboard ────────────────────
@@ -821,7 +1057,41 @@ export function EpisodeWorkspace() {
     await fetchEpisode()
   }
 
-  // ── Compose a single shot ──────────────────────────────────────
+  // ── Server-side FFmpeg compose (single shot) ────────────────
+
+  const handleServerCompose = async (storyboard: Storyboard): Promise<boolean> => {
+    if (!selectedEpisodeId || !storyboard.videoUrl) return false
+    try {
+      const res = await fetch(`/api/episodes/${selectedEpisodeId}/compose`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storyboardId: storyboard.id, mode: 'server' }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.composedUrl) {
+          await api.storyboards.update(storyboard.id, { composedUrl: data.composedUrl })
+          return true
+        }
+        // If source is server but no composedUrl returned, still update from storyboard
+        if (data.storyboard?.composedUrl) {
+          await fetchEpisode()
+          return true
+        }
+      }
+      if (res.status === 501) {
+        // FFmpeg not available on server — signal fallback
+        setFfmpegAvailable(false)
+        return false
+      }
+      // Other server error — fallback
+      return false
+    } catch {
+      return false
+    }
+  }
+
+  // ── Compose a single shot (server FFmpeg first, client fallback) ──
 
   const handleComposeShot = async (storyboard: Storyboard) => {
     if (!storyboard.videoUrl) {
@@ -830,6 +1100,19 @@ export function EpisodeWorkspace() {
     }
     setComposing(storyboard.id)
     try {
+      // Try server-side FFmpeg compose first if available
+      if (ffmpegAvailable) {
+        const serverOk = await handleServerCompose(storyboard)
+        if (serverOk) {
+          toast({ title: `镜头 ${storyboard.shotNumber} 已合成（FFmpeg 服务端）` })
+          await fetchEpisode()
+          return
+        }
+        // Server compose failed or FFmpeg unavailable — fallback to client-side
+        console.warn('Server compose failed, falling back to client-side')
+      }
+
+      // ── Client-side compose (Canvas + MediaRecorder) ──
       const canvas = document.createElement('canvas')
       canvas.width = 1024
       canvas.height = 576
@@ -944,7 +1227,7 @@ export function EpisodeWorkspace() {
 
       await api.storyboards.update(storyboard.id, { composedUrl })
       if (audioCtx) audioCtx.close().catch(() => {})
-      toast({ title: `镜头 ${storyboard.shotNumber} 已合成（含字幕+配音）` })
+      toast({ title: `镜头 ${storyboard.shotNumber} 已合成（WebM 客户端）` })
       await fetchEpisode()
     } catch (err) {
       toast({ title: '合成失败', description: String(err), variant: 'destructive' })
@@ -962,12 +1245,13 @@ export function EpisodeWorkspace() {
       return
     }
     setComposingAll(true)
-    setBatchProgress({ current: 0, total: composable.length, message: '合成中...' })
+    const mode = ffmpegAvailable ? 'FFmpeg' : 'WebM'
+    setBatchProgress({ current: 0, total: composable.length, message: `合成中（${mode}）...` })
     let successCount = 0
     for (let i = 0; i < composable.length; i++) {
       const sb = composable[i]
       setComposing(sb.id)
-      setBatchProgress({ current: i + 1, total: composable.length, message: `合成镜头 ${i + 1}/${composable.length}（字幕+配音）...` })
+      setBatchProgress({ current: i + 1, total: composable.length, message: `合成镜头 ${i + 1}/${composable.length}（${mode} 字幕+配音）...` })
       try {
         await handleComposeShot(sb)
         successCount++
@@ -978,8 +1262,55 @@ export function EpisodeWorkspace() {
     setComposing(null)
     setBatchProgress(null)
     setComposingAll(false)
-    toast({ title: `${successCount}/${composable.length}个镜头合成完毕` })
+    toast({ title: `${successCount}/${composable.length}个镜头合成完毕（${mode}）` })
     await fetchEpisode()
+  }
+
+  // ── Server-side merge all composed shots ────────────────────
+
+  const handleServerMerge = async () => {
+    if (!selectedEpisodeId) return
+    if (!ffmpegAvailable) {
+      toast({ title: 'FFmpeg 不可用，无法合并成片', description: '服务端 FFmpeg 未安装，请使用导出功能替代。', variant: 'destructive' })
+      return
+    }
+    const shotsWithVideo = storyboards.filter((s) => s.composedUrl || s.videoUrl)
+    if (shotsWithVideo.length === 0) {
+      toast({ title: '没有可合并的镜头视频', variant: 'destructive' })
+      return
+    }
+    setMerging(true)
+    setBatchProgress({ current: 0, total: 1, message: '合并成片中（FFmpeg）...' })
+    try {
+      const res = await fetch(`/api/episodes/${selectedEpisodeId}/merge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        const mergeInfo = data.merge
+        toast({
+          title: '合并成片完成',
+          description: mergeInfo
+            ? `${mergeInfo.shotsMerged ?? '全部'}个镜头，时长 ${mergeInfo.duration ?? 0}秒`
+            : undefined,
+        })
+        await fetchEpisode()
+        await fetchMergeStatus()
+      } else if (res.status === 501) {
+        setFfmpegAvailable(false)
+        toast({ title: 'FFmpeg 不可用', description: '服务端 FFmpeg 未安装。', variant: 'destructive' })
+      } else {
+        const data = await res.json().catch(() => ({}))
+        toast({ title: '合并失败', description: data.error || '未知错误', variant: 'destructive' })
+      }
+    } catch (err) {
+      toast({ title: '合并失败', description: String(err), variant: 'destructive' })
+    } finally {
+      setMerging(false)
+      setBatchProgress(null)
+    }
   }
 
   // ── Preview all shots in sequence ───────────────────────────
@@ -1173,6 +1504,7 @@ export function EpisodeWorkspace() {
             batchProgress={batchProgress}
             uploadingField={uploadingField}
             copiedField={copiedField}
+            gridState={gridState}
             handleGenerateStoryboard={handleGenerateStoryboard}
             handleEnhanceShotPrompt={handleEnhanceShotPrompt}
             handleGenerateAllImages={handleGenerateAllImages}
@@ -1183,6 +1515,7 @@ export function EpisodeWorkspace() {
             handleUpload={handleUpload}
             handleCopy={handleCopy}
             handleUpdateStoryboard={handleUpdateStoryboard}
+            handleGridGenerate={handleGridGenerate}
           />
         )
       case 'production':
@@ -1205,6 +1538,9 @@ export function EpisodeWorkspace() {
             previewVideoRef={previewVideoRef}
             previewAudioRef={previewAudioRef}
             perms={perms}
+            ffmpegAvailable={ffmpegAvailable}
+            merging={merging}
+            mergeStatus={mergeStatus}
             handleGenerateShotImage={handleGenerateShotImage}
             handleGenerateVideo={handleGenerateVideo}
             handleGenerateTts={handleGenerateTts}
@@ -1212,6 +1548,7 @@ export function EpisodeWorkspace() {
             handleGenerateAllTts={handleGenerateAllTts}
             handleComposeShot={handleComposeShot}
             handleComposeAll={handleComposeAll}
+            handleServerMerge={handleServerMerge}
             handleStartPreview={handleStartPreview}
             handlePreviewEnded={handlePreviewEnded}
             handleExport={handleExport}
@@ -1259,17 +1596,52 @@ export function EpisodeWorkspace() {
               category="llm"
               value={workspaceModels.llm}
               onChange={(m) => setWorkspaceModel('llm', m)}
+              disabled={isConfigLocked}
             />
             <ModelSelector
               category="image"
               value={workspaceModels.image}
               onChange={(m) => setWorkspaceModel('image', m)}
+              disabled={isConfigLocked}
             />
             <ModelSelector
               category="video"
               value={workspaceModels.video}
               onChange={(m) => setWorkspaceModel('video', m)}
+              disabled={isConfigLocked}
             />
+
+            {/* Lock/Unlock toggle */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={isConfigLocked ? 'default' : 'outline'}
+                  size="sm"
+                  className={`h-8 px-2.5 gap-1.5 text-xs font-medium ${
+                    isConfigLocked
+                      ? 'bg-amber-600 hover:bg-amber-700 text-white border-amber-600'
+                      : 'hover:bg-muted/80'
+                  }`}
+                  onClick={isConfigLocked ? handleUnlockConfig : handleLockConfig}
+                >
+                  {isConfigLocked ? (
+                    <Lock className="size-3.5" />
+                  ) : (
+                    <LockOpen className="size-3.5" />
+                  )}
+                  {isConfigLocked && (
+                    <Badge className="bg-amber-500/30 text-amber-100 text-[10px] px-1 py-0 h-4 border-0 font-medium">
+                      已锁定
+                    </Badge>
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" sideOffset={6}>
+                {isConfigLocked
+                  ? '点击解锁 — 解锁后将使用全局默认模型'
+                  : '点击锁定 — 将当前模型配置锁定到本集'}
+              </TooltipContent>
+            </Tooltip>
           </div>
 
           {/* Status badges - desktop */}
@@ -1314,17 +1686,48 @@ export function EpisodeWorkspace() {
             category="llm"
             value={workspaceModels.llm}
             onChange={(m) => setWorkspaceModel('llm', m)}
+            disabled={isConfigLocked}
           />
           <ModelSelector
             category="image"
             value={workspaceModels.image}
             onChange={(m) => setWorkspaceModel('image', m)}
+            disabled={isConfigLocked}
           />
           <ModelSelector
             category="video"
             value={workspaceModels.video}
             onChange={(m) => setWorkspaceModel('video', m)}
+            disabled={isConfigLocked}
           />
+
+          {/* Lock/Unlock toggle - mobile */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={isConfigLocked ? 'default' : 'outline'}
+                size="sm"
+                className={`h-8 px-2.5 gap-1.5 text-xs font-medium flex-shrink-0 ${
+                  isConfigLocked
+                    ? 'bg-amber-600 hover:bg-amber-700 text-white border-amber-600'
+                    : 'hover:bg-muted/80'
+                }`}
+                onClick={isConfigLocked ? handleUnlockConfig : handleLockConfig}
+              >
+                {isConfigLocked ? <Lock className="size-3.5" /> : <LockOpen className="size-3.5" />}
+                {isConfigLocked && (
+                  <Badge className="bg-amber-500/30 text-amber-100 text-[10px] px-1 py-0 h-4 border-0 font-medium">
+                    已锁定
+                  </Badge>
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" sideOffset={6}>
+              {isConfigLocked
+                ? '点击解锁 — 解锁后将使用全局默认模型'
+                : '点击锁定 — 将当前模型配置锁定到本集'}
+            </TooltipContent>
+          </Tooltip>
         </div>
       </header>
 

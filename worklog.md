@@ -301,5 +301,5 @@ Stage Summary:
 - v0.5 iteration fully implemented with 8 new API routes and 2 new DB models
 - Build passes, 20 files changed, +3974/-707 lines
 - Deployment triggered via Vercel CLI with new token
-- GitHub token: [REDACTED_GH] (still active)
-- Vercel token: [REDACTED_VC] (configured)
+- GitHub token: [REDACTED]
+- Vercel token: [REDACTED]
