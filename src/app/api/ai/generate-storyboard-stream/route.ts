@@ -22,6 +22,7 @@ interface StoryboardShot {
 export async function POST(request: NextRequest) {
   const auth = await requireAuth()
   if (auth.error) return auth.error
+  aiClient._userId = auth.userId
   const { episodeId } = await request.json()
 
   if (!episodeId) {

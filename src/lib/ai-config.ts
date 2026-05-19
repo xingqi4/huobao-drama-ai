@@ -504,6 +504,34 @@ export async function getActiveProvider(category: AiCategory): Promise<ProviderC
 }
 
 /**
+ * Load the active provider config for a given category, with per-user override.
+ * If userId is provided, checks for a user-level active provider first.
+ * Falls back to global getActiveProvider() if no user-level config exists.
+ */
+export async function getActiveProviderForUser(category: AiCategory, userId?: string): Promise<ProviderConfig | null> {
+  // 1. If userId provided, check for user-level active provider first
+  if (userId) {
+    const userProvider = await db.userProvider.findFirst({
+      where: { userId, category, isActive: true },
+    })
+    if (userProvider) {
+      const preset = PROVIDER_PRESETS[category]?.find((p) => p.provider === userProvider.provider)
+      return {
+        category,
+        provider: userProvider.provider,
+        name: preset?.name ?? userProvider.provider,
+        apiKey: userProvider.apiKey || (preset?.envKey ? (process.env[preset.envKey] || '') : ''),
+        baseUrl: userProvider.baseUrl || preset?.defaultBaseUrl || '',
+        model: userProvider.model || preset?.defaultModel || '',
+        isActive: true,
+      }
+    }
+  }
+  // 2. Fallback to global getActiveProvider
+  return getActiveProvider(category)
+}
+
+/**
  * Get all provider configs for a category (for settings UI).
  */
 export async function getAllProviders(category: AiCategory): Promise<ProviderConfig[]> {
@@ -713,6 +741,9 @@ export async function autoInitProviders(): Promise<string[]> {
 // ============================================================
 
 export const aiClient = {
+  // Optional userId override — set before calling methods to use user-level keys
+  _userId: undefined as string | undefined,
+
   // ---- Chat / LLM ----
 
   async chatCompletion(
@@ -723,7 +754,7 @@ export const aiClient = {
       model?: string
     }
   ) {
-    const provider = await getActiveProvider('llm')
+    const provider = await getActiveProviderForUser('llm', this._userId)
     if (!provider) {
       throw new Error('未配置 LLM 供应商。请在设置中配置 API Key。')
     }
@@ -818,7 +849,7 @@ export const aiClient = {
     negativePrompt?: string,
     options?: { width?: number; height?: number; size?: string; referenceImages?: string[] }
   ): Promise<string> {
-    const provider = await getActiveProvider('image')
+    const provider = await getActiveProviderForUser('image', this._userId)
     if (!provider) {
       throw new Error('未配置图片生成供应商。请在设置中配置 API Key。')
     }
@@ -1027,7 +1058,7 @@ export const aiClient = {
     prompt: string,
     firstFrameUrl?: string
   ): Promise<void> {
-    const provider = await getActiveProvider('video')
+    const provider = await getActiveProviderForUser('video', this._userId)
     if (!provider) {
       throw new Error('未配置视频生成供应商。请在设置中配置 API Key。')
     }
@@ -1121,7 +1152,7 @@ export const aiClient = {
     voiceId?: string,
     voiceStyle?: string
   ): Promise<void> {
-    const provider = await getActiveProvider('tts')
+    const provider = await getActiveProviderForUser('tts', this._userId)
     if (!provider) {
       throw new Error('未配置语音合成供应商。请在设置中配置 API Key。')
     }
@@ -1190,7 +1221,7 @@ export const aiClient = {
     responsePreview?: string
   }> {
     try {
-      const provider = await getActiveProvider(category)
+      const provider = await getActiveProviderForUser(category, this._userId)
       if (!provider) {
         return {
           success: false,

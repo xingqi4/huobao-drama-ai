@@ -715,6 +715,34 @@ export const api = {
       }),
   },
 
+  // ---- User Provider (per-user API key overrides) ----
+  userProvider: {
+    get: () =>
+      request<{ providers: Record<string, ProviderConfig[]> }>('/api/settings/user-provider'),
+
+    save: (data: {
+      category: string
+      provider: string
+      name?: string
+      apiKey: string
+      baseUrl?: string
+      model?: string
+      isActive?: boolean
+    }) =>
+      request<{ providers: Record<string, ProviderConfig[]> }>('/api/settings/user-provider', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    delete: (data: { category: string; provider: string }) =>
+      request<{ providers: Record<string, ProviderConfig[]> }>('/api/settings/user-provider', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+  },
+
   // ---- Upload ----
   upload: {
     file: async (

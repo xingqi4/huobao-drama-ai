@@ -90,7 +90,7 @@ export async function POST(
           (event) => {
             sendEvent(event)
           },
-          { modelOverride: model }
+          { modelOverride: model, userId: auth.userId }
         )
 
         // Send final completed event with full results

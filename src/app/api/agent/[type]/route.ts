@@ -236,7 +236,7 @@ export async function POST(
 
   // Execute the agent
   try {
-    const result = await executeAgent(agentType, episodeId, dramaId, message)
+    const result = await executeAgent(agentType, episodeId, dramaId, message, undefined, { userId: auth.userId })
 
     return NextResponse.json({
       agentType,

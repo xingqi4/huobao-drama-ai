@@ -15,7 +15,7 @@ import { DEFAULT_SYSTEM_PROMPTS } from './prompts'
 import { getOpenAIToolsForAgent } from './tools/index'
 import { getExecutorsForAgent, ToolExecutor } from './tools/executors'
 import { loadAgentSkill } from './skills'
-import { getActiveProvider } from '@/lib/ai-config'
+import { getActiveProviderForUser } from '@/lib/ai-config'
 
 // ============================================================
 // Extended message types for tool calling
@@ -115,6 +115,7 @@ async function callLLMWithTools(
     model?: string
     temperature?: number
     maxTokens?: number
+    userId?: string
   }
 ): Promise<{
   message: {
@@ -123,7 +124,7 @@ async function callLLMWithTools(
     tool_calls?: ToolCallMessage[]
   }
 }> {
-  const provider = await getActiveProvider('llm')
+  const provider = await getActiveProviderForUser('llm', options.userId)
   if (!provider) {
     throw new Error('未配置 LLM 供应商。请在设置中配置 API Key。')
   }
@@ -198,7 +199,7 @@ export async function executeAgent(
   dramaId: string,
   message: string,
   onProgress?: AgentProgressCallback,
-  options?: { modelOverride?: string }
+  options?: { modelOverride?: string; userId?: string }
 ): Promise<AgentExecutionResult> {
   // 1. Get agent config from DB (or use defaults)
   const dbConfig = await getAgentConfig(agentType)
@@ -259,6 +260,7 @@ export async function executeAgent(
       model,
       temperature,
       maxTokens,
+      userId: options?.userId,
     })
 
     const assistantMessage = response.message

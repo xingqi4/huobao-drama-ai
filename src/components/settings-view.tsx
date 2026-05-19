@@ -50,6 +50,8 @@ import {
   RotateCcw,
   Wrench,
   Check,
+  Trash2,
+  User,
 } from 'lucide-react'
 
 // ============================================================
@@ -626,6 +628,285 @@ function ProviderCard({
 }
 
 // ============================================================
+// User Provider Card — editable card for non-admin users
+// to configure their own API keys per provider
+// ============================================================
+
+function UserProviderCard({
+  provider,
+  preset,
+  isActive,
+  onSetActive,
+  onSave,
+  onDelete,
+  saving,
+}: {
+  provider: ProviderConfig | null // null means user hasn't configured this provider yet
+  preset: ProviderPreset | undefined
+  isActive: boolean
+  onSetActive: () => void
+  onSave: (data: { category: string; provider: string; name?: string; apiKey: string; baseUrl?: string; model?: string; isActive?: boolean }) => Promise<void>
+  onDelete: () => Promise<void>
+  saving: boolean
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const [expandDone, setExpandDone] = useState(false)
+  const [apiKey, setApiKey] = useState(provider?.apiKey ?? '')
+  const [baseUrl, setBaseUrl] = useState(provider?.baseUrl ?? preset?.defaultBaseUrl ?? '')
+  const [model, setModel] = useState(provider?.model ?? preset?.defaultModel ?? '')
+  const [showKey, setShowKey] = useState(false)
+  const [localSaving, setLocalSaving] = useState(false)
+
+  const hasConfig = Boolean(provider?.apiKey?.trim())
+  const category = provider?.category ?? ''
+  const providerName = preset?.name ?? provider?.provider ?? ''
+
+  // Sync when provider data changes
+  useEffect(() => {
+    setApiKey(provider?.apiKey ?? '')
+    setBaseUrl(provider?.baseUrl ?? preset?.defaultBaseUrl ?? '')
+    setModel(provider?.model ?? preset?.defaultModel ?? '')
+  }, [provider?.apiKey, provider?.baseUrl, provider?.model, preset?.defaultBaseUrl, preset?.defaultModel])
+
+  // Auto-expand if active
+  useEffect(() => {
+    if (isActive) setExpanded(true)
+  }, [isActive])
+
+  useEffect(() => {
+    if (!expanded) setExpandDone(false)
+  }, [expanded])
+
+  const handleSave = async () => {
+    if (!apiKey.trim()) return
+    setLocalSaving(true)
+    try {
+      await onSave({
+        category,
+        provider: preset?.provider ?? provider?.provider ?? '',
+        name: preset?.name,
+        apiKey,
+        baseUrl,
+        model,
+        isActive: true,
+      })
+    } finally {
+      setLocalSaving(false)
+    }
+  }
+
+  const isSaving = saving || localSaving
+
+  return (
+    <Card
+      className={`border-border/50 transition-all duration-200 border-dashed ${
+        isActive
+          ? 'ring-1 ring-amber-500/40 bg-amber-50/5 dark:bg-amber-950/10'
+          : 'bg-card/50 hover:bg-card/80'
+      }`}
+    >
+      <CardContent className="p-4 sm:p-5">
+        {/* Provider header row */}
+        <div className="flex items-start gap-3">
+          {/* Radio button */}
+          <div className="pt-0.5">
+            <RadioGroup
+              value={isActive ? (preset?.provider ?? provider?.provider ?? '') : ''}
+              onValueChange={() => { if (!isActive) onSetActive() }}
+              className="flex"
+            >
+              <RadioGroupItem
+                value={preset?.provider ?? provider?.provider ?? ''}
+                id={`user-${category}-${preset?.provider ?? provider?.provider ?? ''}`}
+                className={isActive ? 'text-amber-500 border-amber-500' : ''}
+              />
+            </RadioGroup>
+          </div>
+
+          {/* Provider info */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Label
+                htmlFor={`user-${category}-${preset?.provider ?? provider?.provider ?? ''}`}
+                className="text-sm font-semibold cursor-pointer"
+              >
+                {providerName}
+              </Label>
+              {isActive ? (
+                <Badge className="text-[10px] bg-amber-500/15 text-amber-600 border-amber-500/20 hover:bg-amber-500/20">
+                  当前使用
+                </Badge>
+              ) : null}
+              {hasConfig ? (
+                <Badge
+                  variant="secondary"
+                  className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/20 gap-1"
+                >
+                  <Zap className="size-2.5" />
+                  自备Key
+                </Badge>
+              ) : (
+                <Badge
+                  variant="secondary"
+                  className="text-[10px] bg-muted/30 text-muted-foreground border-border/30"
+                >
+                  未配置
+                </Badge>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              使用自己的 Key — 优先级高于平台共享 Key
+            </p>
+          </div>
+
+          {/* Expand toggle */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setExpanded(!expanded)}
+            className="text-muted-foreground hover:text-foreground -mr-2"
+          >
+            {expanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+          </Button>
+        </div>
+
+        {/* Expandable configuration */}
+        <AnimatePresence>
+          {expanded && (
+            <motion.div
+              initial={{ maxHeight: 0, opacity: 0 }}
+              animate={{ maxHeight: 2000, opacity: 1 }}
+              exit={{ maxHeight: 0, opacity: 0 }}
+              transition={{ duration: 0.25, ease: 'easeInOut' }}
+              className={expandDone ? '' : 'overflow-hidden'}
+              onAnimationComplete={() => setExpandDone(true)}
+            >
+              <div className="mt-4 pt-4 border-t border-border/30 space-y-4">
+                {/* API Key */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium flex items-center gap-1.5">
+                    <Key className="size-3" />
+                    我的 API Key
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      type={showKey ? 'text' : 'password'}
+                      placeholder="sk-..."
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      className="bg-muted/30 border-border/50 pr-10"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowKey(!showKey)}
+                      className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                    >
+                      {showKey ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                    </Button>
+                  </div>
+                  {!apiKey.trim() && (
+                    <p className="text-[10px] text-muted-foreground/80 flex items-start gap-1">
+                      <Info className="size-3 mt-0.5 flex-shrink-0" />
+                      输入你自己的 API Key，将优先于平台共享 Key 使用
+                    </p>
+                  )}
+                </div>
+
+                {/* Base URL */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">Base URL</Label>
+                  <Input
+                    placeholder={
+                      preset?.defaultBaseUrl
+                        ? `默认: ${preset.defaultBaseUrl}`
+                        : 'https://api.example.com/v1'
+                    }
+                    value={baseUrl}
+                    onChange={(e) => setBaseUrl(e.target.value)}
+                    className="bg-muted/30 border-border/50"
+                  />
+                  {preset?.defaultBaseUrl && baseUrl !== preset.defaultBaseUrl && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="text-[10px] h-6"
+                      onClick={() => setBaseUrl(preset.defaultBaseUrl)}
+                    >
+                      恢复默认 Base URL
+                    </Button>
+                  )}
+                </div>
+
+                {/* Model Selection */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium flex items-center gap-1.5">
+                    <Cpu className="size-3" />
+                    模型
+                  </Label>
+                  {preset?.availableModels && preset.availableModels.length > 0 ? (
+                    <ModelSelector
+                      models={preset.availableModels}
+                      value={model}
+                      onChange={setModel}
+                      defaultModel={preset.defaultModel}
+                    />
+                  ) : (
+                    <Input
+                      placeholder={
+                        preset?.defaultModel
+                          ? `默认: ${preset.defaultModel}`
+                          : 'model-name'
+                      }
+                      value={model}
+                      onChange={(e) => setModel(e.target.value)}
+                      className="bg-muted/30 border-border/50"
+                    />
+                  )}
+                </div>
+
+                {/* Action buttons */}
+                <div className="flex items-center justify-between pt-1">
+                  {hasConfig && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={onDelete}
+                      className="text-[10px] h-8 gap-1 text-destructive hover:text-destructive"
+                    >
+                      <Trash2 className="size-3" />
+                      删除我的配置
+                    </Button>
+                  )}
+                  <div className="flex gap-2 ml-auto">
+                    <Button
+                      size="sm"
+                      onClick={handleSave}
+                      disabled={isSaving || !apiKey.trim()}
+                      className="gap-1.5"
+                    >
+                      {isSaving ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <Save className="size-3.5" />
+                      )}
+                      保存我的配置
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </CardContent>
+    </Card>
+  )
+}
+
+// ============================================================
 // Category Panel — renders the list of providers for one category
 // ============================================================
 
@@ -633,6 +914,7 @@ function CategoryPanel({
   category,
   providers,
   presets,
+  userProviders,
   onSaveProvider,
   onSetActive,
   onTestConnection,
@@ -640,10 +922,15 @@ function CategoryPanel({
   testing,
   savingProvider,
   isAdmin,
+  onSaveUserProvider,
+  onDeleteUserProvider,
+  onSetActiveUserProvider,
+  savingUserProvider,
 }: {
   category: AiCategory
   providers: ProviderConfig[]
   presets: ProviderPreset[]
+  userProviders: ProviderConfig[]
   onSaveProvider: (config: ProviderConfig) => Promise<void>
   onSetActive: (category: AiCategory, provider: string) => void
   onTestConnection: (category: AiCategory) => void
@@ -651,8 +938,15 @@ function CategoryPanel({
   testing: boolean
   savingProvider: string | null
   isAdmin: boolean
+  onSaveUserProvider: (data: { category: string; provider: string; name?: string; apiKey: string; baseUrl?: string; model?: string; isActive?: boolean }) => Promise<void>
+  onDeleteUserProvider: (data: { category: string; provider: string }) => Promise<void>
+  onSetActiveUserProvider: (category: string, provider: string) => void
+  savingUserProvider: string | null
 }) {
   const meta = CATEGORY_META[category]
+
+  // Find user-level active provider
+  const userActiveProvider = userProviders.find((p) => p.isActive)
 
   return (
     <div className="space-y-4">
@@ -665,22 +959,20 @@ function CategoryPanel({
             {meta.badge}
           </Badge>
         </div>
-        {isAdmin && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onTestConnection(category)}
-            disabled={testing}
-            className="gap-1.5"
-          >
-            {testing ? (
-            <Loader2 className="size-3.5 animate-spin" />
-          ) : (
-            <Wifi className="size-3.5" />
-          )}
-          测试连接
-        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onTestConnection(category)}
+          disabled={testing}
+          className="gap-1.5"
+        >
+          {testing ? (
+          <Loader2 className="size-3.5 animate-spin" />
+        ) : (
+          <Wifi className="size-3.5" />
         )}
+        测试连接
+      </Button>
       </div>
 
       {/* Test result */}
@@ -729,7 +1021,7 @@ function CategoryPanel({
         )}
       </AnimatePresence>
 
-      {/* Provider list */}
+      {/* Platform shared key section (global config from admin) */}
       <RadioGroup
         value={providers.find((p) => p.isActive)?.provider ?? ''}
         onValueChange={(val) => onSetActive(category, val)}
@@ -751,6 +1043,45 @@ function CategoryPanel({
           )
         })}
       </RadioGroup>
+
+      {/* User's own key section — always visible for non-admin */}
+      {!isAdmin && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 pt-2">
+            <User className="size-4 text-amber-500" />
+            <h3 className="text-sm font-semibold">我的 API Key</h3>
+            <Badge variant="secondary" className="text-[9px] bg-amber-500/10 text-amber-600 border-amber-500/20">
+              优先使用
+            </Badge>
+          </div>
+          <p className="text-[11px] text-muted-foreground -mt-1">
+            配置你自己的 API Key，将优先于平台共享 Key 使用。未配置时自动使用平台共享 Key。
+          </p>
+
+          <RadioGroup
+            value={userActiveProvider?.provider ?? ''}
+            onValueChange={(val) => onSetActiveUserProvider(category, val)}
+            className="space-y-3"
+          >
+            {presets.map((preset) => {
+              const userProvider = userProviders.find((p) => p.provider === preset.provider)
+              const isUserActive = userActiveProvider?.provider === preset.provider
+              return (
+                <UserProviderCard
+                  key={`user-${category}-${preset.provider}`}
+                  provider={userProvider ?? null}
+                  preset={preset}
+                  isActive={isUserActive}
+                  onSetActive={() => onSetActiveUserProvider(category, preset.provider)}
+                  onSave={onSaveUserProvider}
+                  onDelete={() => onDeleteUserProvider({ category, provider: preset.provider })}
+                  saving={savingUserProvider === `${category}-${preset.provider}`}
+                />
+              )
+            })}
+          </RadioGroup>
+        </div>
+      )}
 
       {/* Helpful hint */}
       <div className="flex items-start gap-2 p-3 rounded-lg bg-muted/20 border border-border/30">
@@ -1050,9 +1381,18 @@ export function SettingsView() {
     tts: [],
   })
 
+  // User provider data (per-user API key overrides)
+  const [userProvidersData, setUserProvidersData] = useState<Record<string, ProviderConfig[]>>({
+    llm: [],
+    image: [],
+    video: [],
+    tts: [],
+  })
+
   // Loading / saving / testing states
   const [loading, setLoading] = useState(true)
   const [savingProvider, setSavingProvider] = useState<string | null>(null)
+  const [savingUserProvider, setSavingUserProvider] = useState<string | null>(null)
   const [testingCategory, setTestingCategory] = useState<AiCategory | null>(null)
   const [testResults, setTestResults] = useState<
     Record<AiCategory, { success: boolean; provider?: string; model?: string; error?: string; responsePreview?: string } | null>
@@ -1078,6 +1418,9 @@ export function SettingsView() {
         // Load agent configs
         const agents = await api.agents.list()
         setAgentsList(agents)
+        // Load user provider configs
+        const userProviders = await api.userProvider.get()
+        setUserProvidersData(userProviders.providers as Record<string, ProviderConfig[]>)
       } catch (err) {
         toast({
           title: '加载设置失败',
@@ -1149,6 +1492,70 @@ export function SettingsView() {
       }
     },
     [toast, updateProvidersFromResponse]
+  )
+
+  // Handle saving user provider config
+  const handleSaveUserProvider = useCallback(
+    async (data: { category: string; provider: string; name?: string; apiKey: string; baseUrl?: string; model?: string; isActive?: boolean }) => {
+      const key = `${data.category}-${data.provider}`
+      setSavingUserProvider(key)
+      try {
+        const result = await api.userProvider.save(data)
+        setUserProvidersData(result.providers as Record<string, ProviderConfig[]>)
+        toast({ title: '我的配置已保存' })
+      } catch (err) {
+        toast({
+          title: '保存失败',
+          description: String(err),
+          variant: 'destructive',
+        })
+      } finally {
+        setSavingUserProvider(null)
+      }
+    },
+    [toast]
+  )
+
+  // Handle deleting user provider config
+  const handleDeleteUserProvider = useCallback(
+    async (data: { category: string; provider: string }) => {
+      try {
+        const result = await api.userProvider.delete(data)
+        setUserProvidersData(result.providers as Record<string, ProviderConfig[]>)
+        toast({ title: '我的配置已删除' })
+      } catch (err) {
+        toast({
+          title: '删除失败',
+          description: String(err),
+          variant: 'destructive',
+        })
+      }
+    },
+    [toast]
+  )
+
+  // Handle setting active user provider
+  const handleSetActiveUserProvider = useCallback(
+    async (category: string, provider: string) => {
+      try {
+        // Deactivate current active user providers in this category, then activate this one
+        const result = await api.userProvider.save({
+          category,
+          provider,
+          apiKey: '', // Will be filled from existing or will need the user to provide
+          isActive: true,
+        })
+        setUserProvidersData(result.providers as Record<string, ProviderConfig[]>)
+        toast({ title: '已切换我的供应商' })
+      } catch (err) {
+        toast({
+          title: '切换失败',
+          description: String(err),
+          variant: 'destructive',
+        })
+      }
+    },
+    [toast]
   )
 
   // Handle saving agent config
@@ -1289,6 +1696,7 @@ export function SettingsView() {
                   const meta = CATEGORY_META[cat]
                   const activeProvider = providersData[cat]?.find((p) => p.isActive)
                   const hasAnyKey = providersData[cat]?.some((p) => p.apiKey)
+                  const hasUserKey = userProvidersData[cat]?.some((p) => p.apiKey)
                   return (
                     <TabsTrigger
                       key={cat}
@@ -1300,7 +1708,9 @@ export function SettingsView() {
                       <span className="sm:hidden">
                         {cat === 'llm' ? 'LLM' : cat === 'tts' ? 'TTS' : cat === 'image' ? '图片' : '视频'}
                       </span>
-                      {activeProvider ? (
+                      {hasUserKey ? (
+                        <span className="inline-block size-1.5 rounded-full bg-amber-500" />
+                      ) : activeProvider ? (
                         <span className="inline-block size-1.5 rounded-full bg-emerald-500" />
                       ) : hasAnyKey ? (
                         <span className="inline-block size-1.5 rounded-full bg-amber-500" />
@@ -1329,6 +1739,7 @@ export function SettingsView() {
                     category={category}
                     providers={providersData[category] ?? []}
                     presets={presetsData[category] ?? []}
+                    userProviders={userProvidersData[category] ?? []}
                     onSaveProvider={handleSaveProvider}
                     onSetActive={handleSetActive}
                     onTestConnection={(cat: AiCategory) => handleTestConnection(cat)}
@@ -1336,6 +1747,10 @@ export function SettingsView() {
                     testing={testingCategory === category}
                     savingProvider={savingProvider}
                     isAdmin={isAdmin}
+                    onSaveUserProvider={handleSaveUserProvider}
+                    onDeleteUserProvider={handleDeleteUserProvider}
+                    onSetActiveUserProvider={handleSetActiveUserProvider}
+                    savingUserProvider={savingUserProvider}
                   />
                 </TabsContent>
               ))}
@@ -1393,7 +1808,7 @@ export function SettingsView() {
                   <Info className="size-3.5 mt-0.5 flex-shrink-0" />
                   {isAdmin
                     ? 'API Key 等敏感信息仅保存在服务端，普通用户无法查看完整密钥'
-                    : '当前 AI 供应商由管理员配置，如需自定义请联系管理员'}
+                    : '您可以配置自己的 API Key（优先使用），未配置时自动使用平台共享 Key'}
                 </p>
                 <p className="text-[10px] text-muted-foreground/60">
                   配置完成后可返回项目开始创作

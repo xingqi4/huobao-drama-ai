@@ -9,6 +9,7 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireAuth()
     if (auth.error) return auth.error
+    aiClient._userId = auth.userId
     const { storyboardId, text, voiceId, voiceStyle } = await request.json()
 
     if (!storyboardId) {

@@ -10,6 +10,7 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireAuth()
     if (auth.error) return auth.error
+    aiClient._userId = auth.userId
     const { sceneId, style, referenceImages } = await request.json() as {
       sceneId: string
       style?: string

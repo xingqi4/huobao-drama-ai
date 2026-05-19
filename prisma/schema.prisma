@@ -3,8 +3,10 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  directUrl         = env("DIRECT_URL")
+  relationMode      = "prisma"
 }
 
 // ============ User (Auth) ============
@@ -21,6 +23,7 @@ model User {
   updatedAt     DateTime @updatedAt
 
   dramas Drama[]
+  userProviders UserProvider[]
 }
 
 // ============ Drama Project ============
@@ -201,6 +204,25 @@ model AiProvider {
   updatedAt   DateTime @updatedAt
 
   @@unique([category, provider])
+}
+
+// ============ User Provider Configuration ============
+// Per-user API key overrides — when set, takes priority over global AiProvider
+model UserProvider {
+  id          String   @id @default(cuid())
+  userId      String
+  category    String   // "llm" | "image" | "video" | "tts"
+  provider    String   // "openai" | "siliconflow" | etc.
+  apiKey      String   @default("")
+  baseUrl     String   @default("")
+  model       String   @default("")
+  isActive    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, category, provider])
 }
 
 // ============ Agent Configuration ============

@@ -12,6 +12,7 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireAuth()
     if (auth.error) return auth.error
+    aiClient._userId = auth.userId
     const body = await request.json().catch(() => ({}))
     const category = (body.category || 'llm') as AiCategory
     const testProvider = body.provider as string | undefined
