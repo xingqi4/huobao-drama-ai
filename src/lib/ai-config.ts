@@ -73,7 +73,9 @@ export async function getActiveProvider(category: AiCategory): Promise<ProviderC
     if (!preset.envKey) continue
     const apiKey = process.env[preset.envKey]
       || process.env[preset.envKey.toLowerCase()]
+      || process.env[preset.envKey.toUpperCase()]
       || (preset.provider === 'openrouter' ? process.env['OpenRouter_API_KEY'] : '')
+      || (preset.provider === 'sensenova' ? process.env['SENSENOVA_KEY'] : '')
       || ''
     if (apiKey) {
       return {
@@ -158,11 +160,15 @@ export async function getAllProviders(category: AiCategory): Promise<ProviderCon
     // Support both uppercase and lowercase env var names
     const envApiKey = (() => {
       if (!preset.envKey) return ''
-      const val = process.env[preset.envKey] || process.env[preset.envKey.toLowerCase()]
+      const val = process.env[preset.envKey] || process.env[preset.envKey.toLowerCase()] || process.env[preset.envKey.toUpperCase()]
       if (val) return val
       // Fallback: try OpenRouter_API_KEY for openrouter provider
       if (preset.provider === 'openrouter' && process.env['OpenRouter_API_KEY']) {
         return process.env['OpenRouter_API_KEY']
+      }
+      // Fallback: try SENSENOVA_KEY for sensenova provider (legacy env var name)
+      if (preset.provider === 'sensenova' && process.env['SENSENOVA_KEY']) {
+        return process.env['SENSENOVA_KEY']
       }
       return ''
     })()

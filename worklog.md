@@ -399,3 +399,30 @@ Stage Summary:
 - 核心修复：max_tokens从4096提升至32768，且不再被DB覆盖
 - 新增LLM工具调用引导和分批重试机制
 - PR #15: https://github.com/dav-niu474/huobao-drama-ai/pull/15
+
+---
+Task ID: 6
+Agent: Main Agent
+Task: 添加商汤SenseNova LLM供应商 + 继续修复分镜生成问题
+
+Work Log:
+- 搜索并阅读商汤SenseNova API文档
+  - base_url: https://api.sensenova.cn/compatible-mode/v2
+  - OpenAI兼容接口，支持function calling
+  - 默认模型: deepseek-v4-flash (限时免费)
+  - 环境变量: sensenova_key
+- 在provider-presets.ts中添加sensenova供应商
+- 在ai-config.ts中添加sensenova自动初始化（优先于OpenRouter）
+- 修复env key大小写兼容：SENSENOVA_KEY / sensenova_key均支持
+- 发现并修复关键bug：tool_call ID缺失时静默丢弃
+  - 之前：tc.id为空时整个tool_call被丢弃→LLM看似未调用save_storyboards
+  - 现在：生成fallback id确保tool_call不会被静默丢弃
+  - 这是分镜保存失败的重要根因之一
+- 更新.env.example添加SENSENOVA_KEY
+
+Stage Summary:
+- 5个文件修改，116行新增/27行删除
+- SenseNova供应商已添加，支持DeepSeek V4 Flash免费模型
+- 修复了tool_call静默丢弃的关键bug
+- PR #15: https://github.com/dav-niu474/huobao-drama-ai/pull/15
+- commit: 208cc77

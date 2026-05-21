@@ -42,7 +42,7 @@ interface ChatMessage {
 // ============================================================
 
 export interface AgentProgressEvent {
-  /** Event type: starting, thinking, tool_call, tool_result, tool_error, text_output, completed, error */
+  /** Event type: starting, thinking, tool_call, tool_result, tool_error, text_output, text_stream, completed, error */
   type: string
   /** Human-readable message */
   message: string
@@ -106,14 +106,16 @@ async function getAgentConfig(
 
 // ============================================================
 // LLM Call with Tool Support — STREAMING
-// Uses streaming API to prevent timeouts on long responses
-// (e.g. storyboard_breaker generating 10-20 shots).
-// Sends heartbeat SSE events during streaming to keep the
-// connection alive and show progress to the user.
+// Uses streaming API with INACTIVITY-BASED timeout.
+// Timeout resets every time a chunk is received, so long
+// responses that are actively streaming won't be killed.
+// Only truly stalled connections (no data for 120s) are aborted.
+// Thinking content (delta.content / reasoning_content) is
+// streamed to the frontend in real-time for better UX.
 // ============================================================
 
-const LLM_STREAM_TIMEOUT = 180_000 // 3 minutes max per LLM call
-const HEARTBEAT_INTERVAL = 8_000   // Send heartbeat every 8 seconds
+const LLM_INACTIVITY_TIMEOUT = 120_000 // 2 min without ANY data → abort
+const THINKING_STREAM_INTERVAL = 400   // Throttle thinking events to every 400ms
 
 async function callLLMWithTools(
   messages: ChatMessage[],
@@ -172,23 +174,78 @@ async function callLLMWithTools(
     headers['X-Title'] = 'AI Drama Creator'
   }
 
-  // Create AbortController for timeout
+  // Create AbortController with inactivity-based timeout
+  // Timeout resets every time we receive ANY data from the stream
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => {
+  let inactivityTimer = setTimeout(() => {
+    console.warn(`[callLLMWithTools] Inactivity timeout (${LLM_INACTIVITY_TIMEOUT / 1000}s) — aborting`)
     controller.abort()
-  }, LLM_STREAM_TIMEOUT)
+  }, LLM_INACTIVITY_TIMEOUT)
 
-  // Start heartbeat interval
-  let heartbeatCount = 0
-  const heartbeatTimer = setInterval(() => {
-    heartbeatCount++
-    options.onProgress?.({
-      type: 'thinking',
-      message: `步骤 ${options.stepNumber || '?'}: Agent 仍在生成中... (已等待${heartbeatCount * (HEARTBEAT_INTERVAL / 1000)}秒)`,
-      timestamp: Date.now(),
-      stepNumber: options.stepNumber,
-    })
-  }, HEARTBEAT_INTERVAL)
+  const resetInactivityTimer = () => {
+    clearTimeout(inactivityTimer)
+    inactivityTimer = setTimeout(() => {
+      console.warn(`[callLLMWithTools] Inactivity timeout (${LLM_INACTIVITY_TIMEOUT / 1000}s) — aborting`)
+      controller.abort()
+    }, LLM_INACTIVITY_TIMEOUT)
+  }
+
+  // Throttled thinking stream — only emit events every THINKING_STREAM_INTERVAL
+  let lastThinkingEmitTime = 0
+  let pendingThinkingContent = ''
+  let thinkingEmitTimer: ReturnType<typeof setTimeout> | null = null
+
+  const emitThinkingStream = (content: string) => {
+    pendingThinkingContent = content
+    const now = Date.now()
+    if (now - lastThinkingEmitTime >= THINKING_STREAM_INTERVAL) {
+      // Enough time has passed — emit immediately
+      lastThinkingEmitTime = now
+      options.onProgress?.({
+        type: 'thinking',
+        message: pendingThinkingContent,
+        timestamp: now,
+        stepNumber: options.stepNumber,
+      })
+      pendingThinkingContent = ''
+      if (thinkingEmitTimer) {
+        clearTimeout(thinkingEmitTimer)
+        thinkingEmitTimer = null
+      }
+    } else if (!thinkingEmitTimer) {
+      // Schedule a delayed emit to ensure the last chunk is sent
+      thinkingEmitTimer = setTimeout(() => {
+        if (pendingThinkingContent) {
+          lastThinkingEmitTime = Date.now()
+          options.onProgress?.({
+            type: 'thinking',
+            message: pendingThinkingContent,
+            timestamp: Date.now(),
+            stepNumber: options.stepNumber,
+          })
+          pendingThinkingContent = ''
+        }
+        thinkingEmitTimer = null
+      }, THINKING_STREAM_INTERVAL)
+    }
+  }
+
+  // Flush any remaining thinking content
+  const flushThinkingStream = () => {
+    if (thinkingEmitTimer) {
+      clearTimeout(thinkingEmitTimer)
+      thinkingEmitTimer = null
+    }
+    if (pendingThinkingContent) {
+      options.onProgress?.({
+        type: 'thinking',
+        message: pendingThinkingContent,
+        timestamp: Date.now(),
+        stepNumber: options.stepNumber,
+      })
+      pendingThinkingContent = ''
+    }
+  }
 
   try {
     const res = await fetch(url, {
@@ -212,6 +269,7 @@ async function callLLMWithTools(
     const decoder = new TextDecoder()
 
     let content = ''
+    let reasoningContent = ''
     let finishReason = ''
     const toolCallsMap = new Map<number, { id: string; name: string; arguments: string }>()
 
@@ -221,6 +279,10 @@ async function callLLMWithTools(
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
+
+      // Reset inactivity timer on every chunk received
+      resetInactivityTimer()
+      chunksReceived++
 
       buffer += decoder.decode(value, { stream: true })
       const lines = buffer.split('\n')
@@ -238,12 +300,20 @@ async function callLLMWithTools(
           const choice = chunk.choices?.[0]
           if (!choice) continue
 
-          chunksReceived++
           const delta = choice.delta
 
-          // Accumulate text content
+          // Accumulate and stream reasoning_content (DeepSeek R1, etc.)
+          if (delta?.reasoning_content) {
+            reasoningContent += delta.reasoning_content
+            emitThinkingStream(reasoningContent)
+          }
+
+          // Accumulate and stream text content as thinking
           if (delta?.content) {
             content += delta.content
+            // Stream content as thinking events so user sees the LLM's
+            // thought process in real-time (especially for storyboard_breaker)
+            emitThinkingStream(content)
           }
 
           // Accumulate tool calls
@@ -274,11 +344,14 @@ async function callLLMWithTools(
       }
     }
 
-    // Clear heartbeat
-    clearInterval(heartbeatTimer)
-    clearTimeout(timeoutId)
+    // Flush any remaining thinking content
+    flushThinkingStream()
 
-    console.log(`[callLLMWithTools] Stream completed: ${chunksReceived} chunks, content=${content.length}chars, toolCalls=${toolCallsMap.size}, finish=${finishReason}, max_tokens=${options.maxTokens}`)
+    // Clear timers
+    clearTimeout(inactivityTimer)
+    if (thinkingEmitTimer) clearTimeout(thinkingEmitTimer)
+
+    console.log(`[callLLMWithTools] Stream completed: ${chunksReceived} chunks, content=${content.length}chars, reasoning=${reasoningContent.length}chars, toolCalls=${toolCallsMap.size}, finish=${finishReason}, max_tokens=${options.maxTokens}`)
 
     // Log each tool call's argument length for debugging truncation issues
     for (const [idx, tc] of toolCallsMap) {
@@ -312,11 +385,11 @@ async function callLLMWithTools(
       finishReason: finishReason || 'stop',
     }
   } catch (error) {
-    clearInterval(heartbeatTimer)
-    clearTimeout(timeoutId)
+    clearTimeout(inactivityTimer)
+    if (thinkingEmitTimer) clearTimeout(thinkingEmitTimer)
 
     if (error instanceof DOMException && error.name === 'AbortError') {
-      throw new Error(`LLM API调用超时（${LLM_STREAM_TIMEOUT / 1000}秒），模型响应时间过长。请尝试使用更快的模型或减少分镜数量。`)
+      throw new Error(`LLM API调用超时（${LLM_INACTIVITY_TIMEOUT / 1000}秒内无数据返回），模型可能已停止响应。请尝试使用更快的模型或减少单次数据量。`)
     }
     throw error
   }
@@ -350,8 +423,7 @@ export async function executeAgent(
   const model = options?.modelOverride || dbConfig?.model || undefined
   const temperature = dbConfig?.temperature ?? 0.7
   // storyboard_breaker needs much larger max_tokens because save_storyboards
-  // tool call contains full storyboard JSON (imagePrompt + videoPrompt per shot)
-  // which can easily exceed 4096 tokens for 15-20 shots.
+  // tool call contains full storyboard JSON (imagePrompt + videoPrompt per shot).
   // ⚠️ IMPORTANT: The AgentConfig table has maxTokens @default(4096), and the
   // PATCH API creates rows with 4096 when not specified. We must NOT let a DB
   // value of 4096 override the type-specific default (e.g., 32768 for storyboard_breaker).
@@ -434,7 +506,7 @@ export async function executeAgent(
     if (finishReason === 'length') {
       onProgress?.({
         type: 'tool_error',
-        message: `步骤 ${steps}: LLM输出被截断（达到max_tokens=${maxTokens}限制），请减少单次数据量或分批保存`,
+        message: `步骤 ${steps}: LLM输出被截断（达到max_tokens=${maxTokens}限制），正在分批重试...`,
         timestamp: Date.now(),
         stepNumber: steps,
       })
@@ -452,7 +524,7 @@ export async function executeAgent(
           messages.push({
             role: 'tool',
             content: JSON.stringify({
-              error: `⚠️ 你的输出被截断了！arguments不完整导致JSON解析失败。请将save_storyboards拆分为多次调用，每次保存3-5个分镜即可。`,
+              error: `⚠️ 你的输出被截断了！arguments不完整导致JSON解析失败。请将save_storyboards拆分为多次调用，每次保存3-5个分镜，并设置append=true（第一次除外）。`,
             }),
             tool_call_id: tc.id,
           })
@@ -467,7 +539,7 @@ export async function executeAgent(
       })
       messages.push({
         role: 'user',
-        content: '⚠️ 你的上一次输出被截断了（达到max_tokens限制）。请继续输出，或者减少输出量。',
+        content: '⚠️ 你的上一次输出被截断了（达到max_tokens限制）。请继续输出，或者减少输出量，分批保存。',
       })
       continue
     }
@@ -501,7 +573,7 @@ export async function executeAgent(
       // No tool calls — check if the LLM should have called a tool but didn't
       // (e.g., the model doesn't support function calling, or it's generating
       // text output instead of tool calls)
-      const hasToolDefinitions = tools.length > 0
+      const hasToolDefinitions = openAITools.length > 0
       const isStoryboardBreaker = agentType === 'storyboard_breaker'
       const shouldUseTools = hasToolDefinitions && isStoryboardBreaker && steps < MAX_STEPS - 2
       const contentStr = assistantMessage.content || ''
@@ -522,7 +594,7 @@ export async function executeAgent(
         })
         messages.push({
           role: 'user',
-          content: '⚠️ 你需要使用提供的工具来完成任务。请调用 save_storyboards 工具将分镜数据保存到数据库，而不是在文本中输出。如果你还没有读取上下文，请先调用 read_storyboard_context 工具。',
+          content: '⚠️ 你需要使用提供的工具来完成任务。请调用 save_storyboards 工具将分镜数据保存到数据库，而不是在文本中输出。如果你还没有读取上下文，请先调用 read_storyboard_context 工具。重要：请分批保存，每次3-5个镜头，使用append参数控制是否追加。',
         })
         continue
       }
@@ -545,7 +617,7 @@ export async function executeAgent(
         // Give the LLM clear instructions to split into smaller batches.
         const isSaveStoryboards = toolName === 'save_storyboards'
         const parseErrorMsg = isSaveStoryboards
-          ? `JSON解析失败：你的save_storyboards参数被截断了（输出超过max_tokens限制）。请将分镜拆分为多次调用，每次只保存3-5个分镜。第一次调用：save_storyboards(storyboards=[镜头1-5])，第二次调用：save_storyboards(storyboards=[镜头6-10])，以此类推。解析错误: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`
+          ? `JSON解析失败：你的save_storyboards参数被截断了（输出超过max_tokens限制）。请将分镜拆分为多次调用，每次只保存3-5个分镜。第一次调用：save_storyboards(storyboards=[镜头1-5], append=false)，后续调用：save_storyboards(storyboards=[镜头6-10], append=true)，以此类推。解析错误: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`
           : `JSON解析失败：${parseErr instanceof Error ? parseErr.message : String(parseErr)}. 参数可能被截断。请减少数据量或分批调用。前50字符: ${toolCall.function.arguments.slice(0, 50)}...`
         messages.push({
           role: 'tool',
@@ -638,6 +710,19 @@ export async function executeAgent(
             result,
           },
         })
+
+        // After successful save_storyboards with append=false, instruct the LLM
+        // to continue with append=true for subsequent batches
+        if (toolName === 'save_storyboards' && !args.append) {
+          const savedCount = (result as any)?.count || 0
+          const totalExpected = 15 // rough estimate, LLM knows the actual count
+          if (savedCount < totalExpected) {
+            messages.push({
+              role: 'user',
+              content: `✅ 已保存第一批 ${savedCount} 个分镜。请继续生成剩余分镜，调用 save_storyboards 时设置 append=true 来追加保存，不要覆盖已有数据。每次保存3-5个镜头即可。`,
+            })
+          }
+        }
       } catch (error) {
         const errorMsg =
           error instanceof Error ? error.message : String(error)
@@ -735,8 +820,11 @@ function summarizeToolResult(toolName: string, result: unknown): string {
     }
     case 'read_storyboard_context':
       return `读取到剧本、${String((r as any).characters?.length || 0)}个角色、${String((r as any).scenes?.length || 0)}个场景`
-    case 'save_storyboards':
-      return r.success ? `已保存 ${r.count} 个分镜镜头` : '保存失败'
+    case 'save_storyboards': {
+      const count = r.count || 0
+      const append = r.append ? '(追加模式)' : '(替换模式)'
+      return r.success ? `已保存 ${count} 个分镜镜头${append}` : '保存失败'
+    }
     case 'update_storyboard':
       return r.success ? `镜头已更新` : '更新失败'
     case 'get_characters':

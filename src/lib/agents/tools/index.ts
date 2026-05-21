@@ -193,7 +193,7 @@ const STORYBOARD_BREAKER_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'save_storyboards',
-    description: '批量保存生成的分镜镜头序列。会先删除该集已有的分镜。⚠️重要：storyboards参数必须直接传入数组对象，不要传入JSON字符串。',
+    description: '批量保存生成的分镜镜头序列。当append=false（默认）时，会先删除该集已有的分镜再创建新的；当append=true时，直接追加新分镜，不删除已有数据。⚠️重要：storyboards参数必须直接传入数组对象，不要传入JSON字符串。分批保存时，第一次用append=false，后续用append=true。',
     parameters: {
       storyboards: {
         type: 'array',
@@ -262,6 +262,11 @@ const STORYBOARD_BREAKER_TOOLS: ToolDefinition[] = [
           },
           requiredFields: ['shotNumber'],
         },
+      },
+      append: {
+        type: 'boolean',
+        description: '是否追加模式。false（默认）：先删除该集已有分镜再保存，适用于第一批分镜；true：直接追加新分镜，不删除已有数据，适用于后续批次。分批保存时：第一次append=false，后续append=true。',
+        required: false,
       },
     },
   },

@@ -112,10 +112,10 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
     {
       provider: 'sensenova',
       name: '商汤 SenseNova',
-      defaultBaseUrl: 'https://api.sensenova.cn/compatible-mode/v2',
+      defaultBaseUrl: 'https://token.sensenova.cn/v1',
       defaultModel: 'deepseek-v4-flash',
       description: '商汤日日新大模型平台 — DeepSeek V4 Flash 限时免费，支持 function calling，OpenAI 兼容接口',
-      envKey: 'SENSENOVA_KEY',
+      envKey: 'sensenova_key',
       availableModels: [
         { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', tags: ['免费', '推荐', '最新'] },
         { id: 'SenseChat-5', name: 'SenseChat-5', tags: ['推荐'] },

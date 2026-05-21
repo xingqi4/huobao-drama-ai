@@ -14,9 +14,14 @@ description: 分镜拆解专业规范
 
 1. **读取上下文**：调用 `read_storyboard_context` 获取剧本、角色、场景、已有分镜摘要
 2. **整体规划**：先通读剧本，规划镜头总数和节奏，确保总时长和叙事连续性合理
-3. **逐镜头拆解**：为每个镜头补全完整字段
-4. **批量保存**：调用 `save_storyboards` 一次性保存完整分镜
-5. **按需调整**：如需修改，调用 `update_storyboard` 修改具体镜头
+3. **分批拆解**：⚠️ **必须分批保存**，每次只生成3-5个镜头，然后立即调用 `save_storyboards` 保存
+   - **第一批**：`save_storyboards(storyboards=[镜头1-5], append=false)` — append=false清除旧数据
+   - **后续批次**：`save_storyboards(storyboards=[镜头6-10], append=true)` — append=true追加不覆盖
+   - 重复直到所有镜头都保存完毕
+4. **按需调整**：如需修改，调用 `update_storyboard` 修改具体镜头
+
+### ⚠️ 分批保存是强制的！
+一次性生成所有分镜会导致输出超时或被截断。分批生成确保每批数据完整保存，避免丢失进度。
 
 ## 镜头要素（17 个必填/选填字段）
 

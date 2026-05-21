@@ -33,7 +33,7 @@ import {
 
 export interface AgentLogEntry {
   id: string
-  type: 'starting' | 'thinking' | 'tool_call' | 'tool_result' | 'tool_error' | 'text_output' | 'completed' | 'error'
+  type: 'starting' | 'thinking' | 'tool_call' | 'tool_result' | 'tool_error' | 'text_output' | 'text_stream' | 'completed' | 'error'
   message: string
   timestamp: number
   stepNumber?: number
@@ -54,6 +54,8 @@ export interface AgentLogEntry {
   duration?: number
   toolCalls?: unknown[]
   steps?: number
+  /** Whether this is a streaming thinking entry that should be updated in place */
+  isStreamingThinking?: boolean
 }
 
 export interface AgentExecutionPanelProps {
@@ -83,6 +85,8 @@ function getEntryIcon(type: AgentLogEntry['type']) {
       return <Play className="size-3.5 text-blue-500" />
     case 'thinking':
       return <Brain className="size-3.5 text-violet-500 animate-pulse" />
+    case 'text_stream':
+      return <Brain className="size-3.5 text-violet-500 animate-pulse" />
     case 'tool_call':
       return <Wrench className="size-3.5 text-amber-500" />
     case 'tool_result':
@@ -105,6 +109,8 @@ function getEntryBadge(type: AgentLogEntry['type']) {
     case 'starting':
       return <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-blue-600 border-blue-300">启动</Badge>
     case 'thinking':
+      return <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-violet-600 border-violet-300">思考</Badge>
+    case 'text_stream':
       return <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-violet-600 border-violet-300">思考</Badge>
     case 'tool_call':
       return <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-amber-600 border-amber-300">工具调用</Badge>
@@ -210,6 +216,12 @@ function LogEntryItem({
   const [expanded, setExpanded] = useState(false)
   const hasDetails = entry.toolCall || entry.toolResult || (entry.textOutput && entry.textOutput.length > 80)
 
+  // For streaming thinking, show content preview with animation
+  const isStreamingThinking = entry.isStreamingThinking
+  const thinkingPreview = isStreamingThinking && entry.message.length > 200
+    ? entry.message.slice(0, 200) + '...'
+    : entry.message
+
   return (
     <div className="relative flex gap-3">
       {/* Timeline connector */}
@@ -226,7 +238,9 @@ function LogEntryItem({
       <div className="flex-1 pb-3 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           {getEntryBadge(entry.type)}
-          <span className="text-sm font-medium">{entry.message}</span>
+          <span className="text-sm font-medium">
+            {isStreamingThinking ? '思考中...' : entry.message}
+          </span>
           {entry.stepNumber && (
             <span className="text-[10px] text-muted-foreground font-mono">
               Step {entry.stepNumber}
@@ -236,6 +250,15 @@ function LogEntryItem({
             {formatTimestamp(entry.timestamp, startTimestamp)}
           </span>
         </div>
+
+        {/* Streaming thinking content preview */}
+        {isStreamingThinking && entry.message.length > 30 && (
+          <div className="mt-1.5 ml-0">
+            <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap max-h-32 overflow-y-auto">
+              {thinkingPreview}
+            </p>
+          </div>
+        )}
 
         {/* Tool call details */}
         {entry.toolCall && (
@@ -608,29 +631,46 @@ export function useAgentExecution() {
                 skillLoaded: event.skillLoaded,
               }
 
-              // ── Heartbeat handling ──
+              // ── Heartbeat / Streaming thinking handling ──
               // When we receive a "thinking" event that says "仍在生成中",
               // it's a heartbeat to keep the connection alive. We UPDATE
-              // the last thinking entry's message instead of adding a new one,
-              // so the UI shows a live counter rather than a flood of entries.
-              if (event.type === 'thinking' && event.message?.includes('仍在生成中')) {
+              // the last thinking entry's message instead of adding a new one.
+              // For streaming thinking (actual content), we also update the
+              // last thinking entry for the same step to show real-time progress.
+              if (event.type === 'thinking') {
+                const isHeartbeat = event.message?.includes('仍在生成中')
+                const isInitialThink = event.message?.includes('正在思考')
+                
                 setLogs(prev => {
                   const currentLogs = prev[agentType] || []
-                  // Find the last "thinking" entry for this step
+                  // Find the last "thinking" or "text_stream" entry for this step
                   const lastThinkingIdx = [...currentLogs]
                     .reverse()
-                    .findIndex(l => l.type === 'thinking' && l.stepNumber === event.stepNumber)
+                    .findIndex(l => 
+                      (l.type === 'thinking' || l.type === 'text_stream') && 
+                      l.stepNumber === event.stepNumber
+                    )
 
                   if (lastThinkingIdx !== -1) {
                     const realIdx = currentLogs.length - 1 - lastThinkingIdx
+                    const existing = currentLogs[realIdx]
+                    // Update the existing thinking entry:
+                    // - For heartbeat: just update the message
+                    // - For streaming content: update message and mark as streaming
                     const updated = [...currentLogs]
-                    updated[realIdx] = { ...updated[realIdx], message: event.message }
+                    updated[realIdx] = { 
+                      ...existing, 
+                      message: event.message,
+                      // If it's actual content (not heartbeat/initial), mark as streaming
+                      isStreamingThinking: !isHeartbeat && !isInitialThink,
+                      type: isHeartbeat ? existing.type : 'thinking',
+                    }
                     return { ...prev, [agentType]: updated }
                   }
                   // No previous thinking found, add as new entry
                   return { ...prev, [agentType]: [...currentLogs, entry] }
                 })
-                // Don't process further — it's just a heartbeat update
+                // Don't process further — it's a thinking update
                 continue
               }
 
