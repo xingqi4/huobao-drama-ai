@@ -355,8 +355,9 @@ async function callLLMWithTools(
           // Handle non-standard format: some providers put tool call in choice itself
           // (not in delta, but in the choice-level tool_calls or function_call)
           if (!delta?.tool_calls && !delta?.function_call && choice.tool_calls) {
-            for (const tc of choice.tool_calls) {
-              const idx = tc.index ?? 0
+            for (let i = 0; i < choice.tool_calls.length; i++) {
+              const tc = choice.tool_calls[i]
+              const idx = tc.index ?? i  // Use loop index as fallback to avoid collision
               if (!toolCallsMap.has(idx)) {
                 toolCallsMap.set(idx, {
                   id: tc.id || '',
@@ -403,8 +404,9 @@ async function callLLMWithTools(
     const hasToolCallsWithNoNameOrArgs = [...toolCallsMap.values()].some(tc => !tc.name && !tc.arguments)
     // Also check: if content looks like it might contain a tool call attempt
     // (e.g., the LLM output the tool call as text instead of proper format)
+    const toolNames = tools.map(t => t.function?.name).filter(Boolean)
     const contentLooksLikeToolCall = content && !toolCallsMap.size &&
-      (content.includes('save_storyboards') || content.includes('read_storyboard_context'))
+      toolNames.some(name => content.includes(name!))
 
     if ((hasEmptyToolNames || hasToolCallsWithNoNameOrArgs || contentLooksLikeToolCall) && tools.length > 0) {
       console.warn(`[callLLMWithTools] Streaming tool call parsing failed (emptyNames=${hasEmptyToolNames}, noNameNoArgs=${hasToolCallsWithNoNameOrArgs}, contentLikeToolCall=${contentLooksLikeToolCall}), retrying with non-streaming request`)
