@@ -1,20 +1,8 @@
-import {
-  FileText,
-  Users,
-  Mic,
-  Film,
-  Clapperboard,
-  Image,
-  Video,
-  Music,
-  Scissors,
-  Layers,
-  Combine,
-} from 'lucide-react'
+import { FileText, Users, Mic, Film, Clapperboard } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import type { StepDef, PipelineStepDef, PipelineStepKey } from './types'
+import type { StepDef } from './types'
 
-// ── Legacy step definitions (for sidebar backward compat) ────
+// ── Step definitions ─────────────────────────────────────────
 
 export const STEPS: StepDef[] = [
   {
@@ -48,37 +36,6 @@ export const STEPS: StepDef[] = [
   },
 ]
 
-// ── 11-step pipeline definitions ──────────────────────────────
-
-export const PIPELINE_STEPS: PipelineStepDef[] = [
-  { key: 'raw_content', label: '原始内容', icon: <FileText className="size-3.5" />, stepNumber: 1 },
-  { key: 'script_rewrite', label: '剧本改写', icon: <FileText className="size-3.5" />, stepNumber: 2 },
-  { key: 'character_extract', label: '角色提取', icon: <Users className="size-3.5" />, stepNumber: 3 },
-  { key: 'voice_assign', label: '音色分配', icon: <Mic className="size-3.5" />, stepNumber: 4 },
-  { key: 'storyboard', label: '分镜拆解', icon: <Film className="size-3.5" />, stepNumber: 5 },
-  { key: 'character_images', label: '角色图片', icon: <Image className="size-3.5" />, stepNumber: 6 },
-  { key: 'scene_images', label: '场景图片', icon: <Layers className="size-3.5" />, stepNumber: 7 },
-  { key: 'dubbing', label: '配音生成', icon: <Music className="size-3.5" />, stepNumber: 8 },
-  { key: 'shot_frames', label: '镜头帧图', icon: <Scissors className="size-3.5" />, stepNumber: 9 },
-  { key: 'video_generation', label: '视频生成', icon: <Video className="size-3.5" />, stepNumber: 10 },
-  { key: 'compose_merge', label: '合成拼接', icon: <Combine className="size-3.5" />, stepNumber: 11 },
-]
-
-// Map pipeline step keys to legacy step keys for panel navigation
-export const PIPELINE_TO_STEP_MAP: Record<PipelineStepKey, string> = {
-  raw_content: 'raw',
-  script_rewrite: 'rewrite',
-  character_extract: 'extract',
-  voice_assign: 'voice',
-  storyboard: 'storyboard',
-  character_images: 'extract',
-  scene_images: 'extract',
-  dubbing: 'production',
-  shot_frames: 'storyboard',
-  video_generation: 'production',
-  compose_merge: 'production',
-}
-
 // ── Helper: status badge ─────────────────────────────────────
 
 export function statusBadge(status: string) {
@@ -109,40 +66,6 @@ export function shotTypeLabel(type: string): string {
     'point-of-view': '主观',
   }
   return map[type] ?? type
-}
-
-// ── Helper: camera angle label ────────────────────────────────
-
-export function cameraAngleLabel(angle: string): string {
-  const map: Record<string, string> = {
-    'eye-level': '平视',
-    'high-angle': '俯拍',
-    'low-angle': '仰拍',
-    'dutch-angle': '倾斜',
-    'birds-eye': '鸟瞰',
-    'worms-eye': '虫视',
-  }
-  return map[angle] ?? angle
-}
-
-// ── Helper: camera movement label ─────────────────────────────
-
-export function cameraMovementLabel(movement: string): string {
-  const map: Record<string, string> = {
-    'static': '固定',
-    'pan-left': '左摇',
-    'pan-right': '右摇',
-    'tilt-up': '上摇',
-    'tilt-down': '下摇',
-    'zoom-in': '推',
-    'zoom-out': '拉',
-    'dolly-in': '前推',
-    'dolly-out': '后拉',
-    'tracking': '跟拍',
-    'crane-up': '摇臂上升',
-    'handheld': '手持',
-  }
-  return map[movement] ?? movement
 }
 
 // ── Panel transition variants ────────────────────────────────
