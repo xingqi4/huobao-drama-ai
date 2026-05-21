@@ -631,7 +631,7 @@ export function EpisodeWorkspace() {
         } else if (result.toolErrors.length > 0) {
           diagInfo = `工具执行错误：${result.toolErrors.slice(0, 3).join('；')}`
         } else {
-          diagInfo = 'AI未能成功调用save_storyboards工具。可能原因：1) LLM输出被截断（max_tokens不够）；2) LLM没有正确调用工具。建议：检查模型是否支持function calling。'
+          diagInfo = 'AI未能成功调用save_storyboards工具。可能原因：1) LLM输出被截断（max_tokens不够）——已自动调高至32768，请重试；2) LLM没有正确调用工具——已添加自动引导逻辑；3) 当前模型不支持function calling——请切换到支持function calling的模型（如GPT-4o、DeepSeek V4、Qwen3等）。建议：在设置中检查LLM模型是否支持工具调用。'
         }
         showResultDialog('error', '分镜生成失败', diagInfo)
       }

@@ -278,7 +278,12 @@ async function callLLMWithTools(
     clearInterval(heartbeatTimer)
     clearTimeout(timeoutId)
 
-    console.log(`[callLLMWithTools] Stream completed: ${chunksReceived} chunks, content=${content.length}chars, toolCalls=${toolCallsMap.size}, finish=${finishReason}`)
+    console.log(`[callLLMWithTools] Stream completed: ${chunksReceived} chunks, content=${content.length}chars, toolCalls=${toolCallsMap.size}, finish=${finishReason}, max_tokens=${options.maxTokens}`)
+
+    // Log each tool call's argument length for debugging truncation issues
+    for (const [idx, tc] of toolCallsMap) {
+      console.log(`[callLLMWithTools] Tool[${idx}]: name=${tc.name}, argsLen=${tc.arguments.length}, id=${tc.id}`)
+    }
 
     // Assemble final message
     const toolCalls: ToolCallMessage[] = []
@@ -343,13 +348,25 @@ export async function executeAgent(
   const temperature = dbConfig?.temperature ?? 0.7
   // storyboard_breaker needs much larger max_tokens because save_storyboards
   // tool call contains full storyboard JSON (imagePrompt + videoPrompt per shot)
-  // which can easily exceed 4096 tokens for 15-20 shots
+  // which can easily exceed 4096 tokens for 15-20 shots.
+  // ⚠️ IMPORTANT: The AgentConfig table has maxTokens @default(4096), and the
+  // PATCH API creates rows with 4096 when not specified. We must NOT let a DB
+  // value of 4096 override the type-specific default (e.g., 32768 for storyboard_breaker).
+  // Strategy: only use DB value if it EXCEEDS the type-specific default; otherwise
+  // the DB value is likely a stale/generic default and should be ignored.
   const defaultMaxTokens: Record<string, number> = {
-    storyboard_breaker: 16384,
+    storyboard_breaker: 32768,
     extractor: 8192,
     script_rewriter: 8192,
   }
-  const maxTokens = dbConfig?.maxTokens ?? defaultMaxTokens[agentType] ?? 4096
+  const typeDefault = defaultMaxTokens[agentType] ?? 4096
+  // Use DB value only if it's explicitly set to a value larger than the type default
+  // (i.e., the admin intentionally increased it). Otherwise, use the type default.
+  const maxTokens = (dbConfig?.maxTokens && dbConfig.maxTokens > typeDefault)
+    ? dbConfig.maxTokens
+    : typeDefault
+
+  console.log(`[executeAgent] agentType=${agentType}, dbMaxTokens=${dbConfig?.maxTokens}, typeDefault=${typeDefault}, finalMaxTokens=${maxTokens}`)
 
   // 2. Build instructions (base prompt + skill)
   const skillContent = loadAgentSkill(agentType)
@@ -478,8 +495,37 @@ export async function executeAgent(
       !assistantMessage.tool_calls ||
       assistantMessage.tool_calls.length === 0
     ) {
+      // No tool calls — check if the LLM should have called a tool but didn't
+      // (e.g., the model doesn't support function calling, or it's generating
+      // text output instead of tool calls)
+      const hasToolDefinitions = tools.length > 0
+      const isStoryboardBreaker = agentType === 'storyboard_breaker'
+      const shouldUseTools = hasToolDefinitions && isStoryboardBreaker && steps < MAX_STEPS - 2
+      const contentStr = assistantMessage.content || ''
+
+      // If this is storyboard_breaker and it hasn't called any tools yet,
+      // it might be outputting the storyboard as text instead of calling save_storyboards.
+      // Nudge it to use the tool.
+      if (shouldUseTools && toolCallResults.length === 0) {
+        onProgress?.({
+          type: 'thinking',
+          message: `步骤 ${steps}: LLM未调用工具，正在引导使用save_storyboards...`,
+          timestamp: Date.now(),
+          stepNumber: steps,
+        })
+        messages.push({
+          role: 'assistant',
+          content: contentStr || null,
+        })
+        messages.push({
+          role: 'user',
+          content: '⚠️ 你需要使用提供的工具来完成任务。请调用 save_storyboards 工具将分镜数据保存到数据库，而不是在文本中输出。如果你还没有读取上下文，请先调用 read_storyboard_context 工具。',
+        })
+        continue
+      }
+
       // No more tool calls — we're done
-      finalText = assistantMessage.content || ''
+      finalText = contentStr
       break
     }
 
@@ -492,8 +538,12 @@ export async function executeAgent(
       try {
         args = JSON.parse(toolCall.function.arguments)
       } catch (parseErr) {
-        // JSON parse failed — likely due to max_tokens truncation
-        const parseErrorMsg = `JSON解析失败：${parseErr instanceof Error ? parseErr.message : String(parseErr)}. 参数可能被截断。请减少数据量或分批调用。前50字符: ${toolCall.function.arguments.slice(0, 50)}...`
+        // JSON parse failed — likely due to max_tokens truncation.
+        // Give the LLM clear instructions to split into smaller batches.
+        const isSaveStoryboards = toolName === 'save_storyboards'
+        const parseErrorMsg = isSaveStoryboards
+          ? `JSON解析失败：你的save_storyboards参数被截断了（输出超过max_tokens限制）。请将分镜拆分为多次调用，每次只保存3-5个分镜。第一次调用：save_storyboards(storyboards=[镜头1-5])，第二次调用：save_storyboards(storyboards=[镜头6-10])，以此类推。解析错误: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`
+          : `JSON解析失败：${parseErr instanceof Error ? parseErr.message : String(parseErr)}. 参数可能被截断。请减少数据量或分批调用。前50字符: ${toolCall.function.arguments.slice(0, 50)}...`
         messages.push({
           role: 'tool',
           content: JSON.stringify({ error: parseErrorMsg }),
@@ -506,7 +556,7 @@ export async function executeAgent(
         })
         onProgress?.({
           type: 'tool_error',
-          message: `工具 ${toolName} 参数解析失败: ${parseErrorMsg}`,
+          message: `工具 ${toolName} 参数解析失败（可能被截断），已请求LLM分批重试`,
           timestamp: Date.now(),
           stepNumber: steps,
           toolResult: { name: toolName, error: parseErrorMsg },
