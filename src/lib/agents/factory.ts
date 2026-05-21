@@ -287,17 +287,20 @@ async function callLLMWithTools(
 
     // Assemble final message
     const toolCalls: ToolCallMessage[] = []
-    for (const [_, tc] of toolCallsMap) {
-      if (tc.id && tc.name) {
-        toolCalls.push({
-          id: tc.id,
-          type: 'function',
-          function: {
-            name: tc.name,
-            arguments: tc.arguments || '{}',
-          },
-        })
-      }
+    for (const [idx, tc] of toolCallsMap) {
+      // Some LLM providers don't send tool_call id in the first chunk,
+      // or send it as empty string. Generate a fallback id if missing.
+      const toolCallId = tc.id || `tool_call_${idx}_${Date.now()}`
+      const toolCallName = tc.name || 'unknown'
+      console.log(`[callLLMWithTools] Tool[${idx}]: name=${tc.name}, id=${tc.id}, argsLen=${tc.arguments.length}, fallbackId=${toolCallId}`)
+      toolCalls.push({
+        id: toolCallId,
+        type: 'function',
+        function: {
+          name: toolCallName,
+          arguments: tc.arguments || '{}',
+        },
+      })
     }
 
     return {
