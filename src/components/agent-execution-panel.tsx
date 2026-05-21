@@ -563,7 +563,7 @@ export function useAgentExecution() {
           next.delete(agentType)
           return next
         })
-        return
+        return { hadErrors: true, toolErrors: [] }
       }
 
       const reader = res.body?.getReader()
@@ -574,7 +574,7 @@ export function useAgentExecution() {
           next.delete(agentType)
           return next
         })
-        return
+        return { hadErrors: true, toolErrors: [] }
       }
 
       const decoder = new TextDecoder()
@@ -606,6 +606,32 @@ export function useAgentExecution() {
                 agentType: event.agentType,
                 agentName: event.agentName,
                 skillLoaded: event.skillLoaded,
+              }
+
+              // ── Heartbeat handling ──
+              // When we receive a "thinking" event that says "仍在生成中",
+              // it's a heartbeat to keep the connection alive. We UPDATE
+              // the last thinking entry's message instead of adding a new one,
+              // so the UI shows a live counter rather than a flood of entries.
+              if (event.type === 'thinking' && event.message?.includes('仍在生成中')) {
+                setLogs(prev => {
+                  const currentLogs = prev[agentType] || []
+                  // Find the last "thinking" entry for this step
+                  const lastThinkingIdx = [...currentLogs]
+                    .reverse()
+                    .findIndex(l => l.type === 'thinking' && l.stepNumber === event.stepNumber)
+
+                  if (lastThinkingIdx !== -1) {
+                    const realIdx = currentLogs.length - 1 - lastThinkingIdx
+                    const updated = [...currentLogs]
+                    updated[realIdx] = { ...updated[realIdx], message: event.message }
+                    return { ...prev, [agentType]: updated }
+                  }
+                  // No previous thinking found, add as new entry
+                  return { ...prev, [agentType]: [...currentLogs, entry] }
+                })
+                // Don't process further — it's just a heartbeat update
+                continue
               }
 
               // Handle backward compatibility with old format (step field)

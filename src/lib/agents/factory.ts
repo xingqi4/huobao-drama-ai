@@ -105,8 +105,15 @@ async function getAgentConfig(
 }
 
 // ============================================================
-// LLM Call with Tool Support
+// LLM Call with Tool Support — STREAMING
+// Uses streaming API to prevent timeouts on long responses
+// (e.g. storyboard_breaker generating 10-20 shots).
+// Sends heartbeat SSE events during streaming to keep the
+// connection alive and show progress to the user.
 // ============================================================
+
+const LLM_STREAM_TIMEOUT = 180_000 // 3 minutes max per LLM call
+const HEARTBEAT_INTERVAL = 8_000   // Send heartbeat every 8 seconds
 
 async function callLLMWithTools(
   messages: ChatMessage[],
@@ -116,6 +123,8 @@ async function callLLMWithTools(
     temperature?: number
     maxTokens?: number
     userId?: string
+    onProgress?: AgentProgressCallback
+    stepNumber?: number
   }
 ): Promise<{
   message: {
@@ -140,6 +149,7 @@ async function callLLMWithTools(
     })),
     temperature: options.temperature ?? 0.7,
     max_tokens: options.maxTokens ?? 4096,
+    stream: true, // ← CRITICAL: Use streaming to prevent timeouts
   }
 
   // Add tools if provided
@@ -162,25 +172,145 @@ async function callLLMWithTools(
     headers['X-Title'] = 'AI Drama Creator'
   }
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-  })
+  // Create AbortController for timeout
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => {
+    controller.abort()
+  }, LLM_STREAM_TIMEOUT)
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => 'Unknown error')
-    throw new Error(`LLM API error (${res.status}): ${text.slice(0, 300)}`)
-  }
+  // Start heartbeat interval
+  let heartbeatCount = 0
+  const heartbeatTimer = setInterval(() => {
+    heartbeatCount++
+    options.onProgress?.({
+      type: 'thinking',
+      message: `步骤 ${options.stepNumber || '?'}: Agent 仍在生成中... (已等待${heartbeatCount * (HEARTBEAT_INTERVAL / 1000)}秒)`,
+      timestamp: Date.now(),
+      stepNumber: options.stepNumber,
+    })
+  }, HEARTBEAT_INTERVAL)
 
-  const data = await res.json()
-  const finishReason = data.choices?.[0]?.finish_reason ?? 'stop'
-  return {
-    message: data.choices?.[0]?.message ?? {
-      role: 'assistant',
-      content: '',
-    },
-    finishReason,
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    })
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => 'Unknown error')
+      throw new Error(`LLM API error (${res.status}): ${text.slice(0, 500)}`)
+    }
+
+    if (!res.body) {
+      throw new Error('LLM API returned no body')
+    }
+
+    // ── Stream reading + tool call assembly ──
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+
+    let content = ''
+    let finishReason = ''
+    const toolCallsMap = new Map<number, { id: string; name: string; arguments: string }>()
+
+    let buffer = ''
+    let chunksReceived = 0
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (!trimmed || !trimmed.startsWith('data: ')) continue
+
+        const data = trimmed.slice(6)
+        if (data === '[DONE]') continue
+
+        try {
+          const chunk = JSON.parse(data)
+          const choice = chunk.choices?.[0]
+          if (!choice) continue
+
+          chunksReceived++
+          const delta = choice.delta
+
+          // Accumulate text content
+          if (delta?.content) {
+            content += delta.content
+          }
+
+          // Accumulate tool calls
+          if (delta?.tool_calls) {
+            for (const tc of delta.tool_calls) {
+              const idx = tc.index ?? 0
+              if (!toolCallsMap.has(idx)) {
+                toolCallsMap.set(idx, {
+                  id: tc.id || '',
+                  name: tc.function?.name || '',
+                  arguments: '',
+                })
+              }
+              const existing = toolCallsMap.get(idx)!
+              if (tc.id) existing.id = tc.id
+              if (tc.function?.name) existing.name = tc.function.name
+              if (tc.function?.arguments) existing.arguments += tc.function.arguments
+            }
+          }
+
+          // Capture finish reason
+          if (choice.finish_reason) {
+            finishReason = choice.finish_reason
+          }
+        } catch {
+          // Ignore JSON parse errors on individual chunks
+        }
+      }
+    }
+
+    // Clear heartbeat
+    clearInterval(heartbeatTimer)
+    clearTimeout(timeoutId)
+
+    console.log(`[callLLMWithTools] Stream completed: ${chunksReceived} chunks, content=${content.length}chars, toolCalls=${toolCallsMap.size}, finish=${finishReason}`)
+
+    // Assemble final message
+    const toolCalls: ToolCallMessage[] = []
+    for (const [_, tc] of toolCallsMap) {
+      if (tc.id && tc.name) {
+        toolCalls.push({
+          id: tc.id,
+          type: 'function',
+          function: {
+            name: tc.name,
+            arguments: tc.arguments || '{}',
+          },
+        })
+      }
+    }
+
+    return {
+      message: {
+        role: 'assistant',
+        content: content || null,
+        ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+      },
+      finishReason: finishReason || 'stop',
+    }
+  } catch (error) {
+    clearInterval(heartbeatTimer)
+    clearTimeout(timeoutId)
+
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error(`LLM API调用超时（${LLM_STREAM_TIMEOUT / 1000}秒），模型响应时间过长。请尝试使用更快的模型或减少分镜数量。`)
+    }
+    throw error
   }
 }
 
@@ -272,6 +402,8 @@ export async function executeAgent(
       temperature,
       maxTokens,
       userId: options?.userId,
+      onProgress,
+      stepNumber: steps,
     })
 
     const assistantMessage = response.message
