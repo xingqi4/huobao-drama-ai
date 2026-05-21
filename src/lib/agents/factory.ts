@@ -316,7 +316,7 @@ async function callLLMWithTools(
             emitThinkingStream(content)
           }
 
-          // Accumulate tool calls
+          // Accumulate tool calls (OpenAI standard format: delta.tool_calls)
           if (delta?.tool_calls) {
             for (const tc of delta.tool_calls) {
               const idx = tc.index ?? 0
@@ -331,6 +331,44 @@ async function callLLMWithTools(
               if (tc.id) existing.id = tc.id
               if (tc.function?.name) existing.name = tc.function.name
               if (tc.function?.arguments) existing.arguments += tc.function.arguments
+            }
+          }
+
+          // Handle old OpenAI format: delta.function_call (singular)
+          // Some providers (e.g., older SenseNova) use this instead of tool_calls
+          if (delta?.function_call) {
+            const fc = delta.function_call
+            const idx = 0 // old format only supports one function call
+            if (!toolCallsMap.has(idx)) {
+              toolCallsMap.set(idx, {
+                id: '',
+                name: fc.name || '',
+                arguments: fc.arguments || '',
+              })
+            } else {
+              const existing = toolCallsMap.get(idx)!
+              if (fc.name) existing.name = fc.name
+              if (fc.arguments) existing.arguments += fc.arguments
+            }
+          }
+
+          // Handle non-standard format: some providers put tool call in choice itself
+          // (not in delta, but in the choice-level tool_calls or function_call)
+          if (!delta?.tool_calls && !delta?.function_call && choice.tool_calls) {
+            for (const tc of choice.tool_calls) {
+              const idx = tc.index ?? 0
+              if (!toolCallsMap.has(idx)) {
+                toolCallsMap.set(idx, {
+                  id: tc.id || '',
+                  name: tc.function?.name || '',
+                  arguments: tc.function?.arguments || '',
+                })
+              } else {
+                const existing = toolCallsMap.get(idx)!
+                if (tc.id) existing.id = tc.id
+                if (tc.function?.name) existing.name = tc.function.name
+                if (tc.function?.arguments) existing.arguments += tc.function.arguments
+              }
             }
           }
 
@@ -356,6 +394,66 @@ async function callLLMWithTools(
     // Log each tool call's argument length for debugging truncation issues
     for (const [idx, tc] of toolCallsMap) {
       console.log(`[callLLMWithTools] Tool[${idx}]: name=${tc.name}, argsLen=${tc.arguments.length}, id=${tc.id}`)
+    }
+
+    // ── Non-streaming fallback when tool call parsing fails ──
+    // If streaming didn't properly capture tool call names (some providers
+    // don't stream tool calls correctly), retry with a non-streaming request
+    const hasEmptyToolNames = [...toolCallsMap.values()].some(tc => !tc.name && tc.arguments)
+    const hasToolCallsWithNoNameOrArgs = [...toolCallsMap.values()].some(tc => !tc.name && !tc.arguments)
+    // Also check: if content looks like it might contain a tool call attempt
+    // (e.g., the LLM output the tool call as text instead of proper format)
+    const contentLooksLikeToolCall = content && !toolCallsMap.size &&
+      (content.includes('save_storyboards') || content.includes('read_storyboard_context'))
+
+    if ((hasEmptyToolNames || hasToolCallsWithNoNameOrArgs || contentLooksLikeToolCall) && tools.length > 0) {
+      console.warn(`[callLLMWithTools] Streaming tool call parsing failed (emptyNames=${hasEmptyToolNames}, noNameNoArgs=${hasToolCallsWithNoNameOrArgs}, contentLikeToolCall=${contentLooksLikeToolCall}), retrying with non-streaming request`)
+      try {
+        const nonStreamRes = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ ...body, stream: false }),
+          signal: AbortSignal.timeout(180_000), // 3 min timeout for non-streaming
+        })
+        if (nonStreamRes.ok) {
+          const nonStreamData = await nonStreamRes.json()
+          const nsChoice = nonStreamData.choices?.[0]
+          if (nsChoice) {
+            // Override content and finish reason from non-streaming response
+            if (nsChoice.message?.content) content = nsChoice.message.content
+            if (nsChoice.finish_reason) finishReason = nsChoice.finish_reason
+            // Clear and rebuild tool calls from non-streaming response
+            if (nsChoice.message?.tool_calls?.length) {
+              toolCallsMap.clear()
+              for (const tc of nsChoice.message.tool_calls) {
+                toolCallsMap.set(toolCallsMap.size, {
+                  id: tc.id || '',
+                  name: tc.function?.name || '',
+                  arguments: tc.function?.arguments || '',
+                })
+              }
+              console.log(`[callLLMWithTools] Non-streaming fallback succeeded: ${toolCallsMap.size} tool calls recovered`)
+            } else if (nsChoice.message?.function_call) {
+              // Old format: single function_call
+              toolCallsMap.clear()
+              toolCallsMap.set(0, {
+                id: '',
+                name: nsChoice.message.function_call.name || '',
+                arguments: nsChoice.message.function_call.arguments || '',
+              })
+              console.log(`[callLLMWithTools] Non-streaming fallback (function_call format): name=${nsChoice.message.function_call.name}`)
+            } else if (nsChoice.message?.content) {
+              // LLM output text instead of calling tools — this is fine,
+              // the agentic loop will handle it (nudge logic)
+              console.log(`[callLLMWithTools] Non-streaming response is text-only (no tool calls) — content=${nsChoice.message.content.slice(0, 100)}...`)
+            }
+          }
+        } else {
+          console.warn(`[callLLMWithTools] Non-streaming fallback failed: ${nonStreamRes.status}`)
+        }
+      } catch (nsErr) {
+        console.warn(`[callLLMWithTools] Non-streaming fallback error: ${nsErr instanceof Error ? nsErr.message : String(nsErr)}`)
+      }
     }
 
     // Assemble final message
@@ -477,6 +575,7 @@ export async function executeAgent(
 
   let steps = 0
   let finalText = ''
+  let consecutiveUnknownToolCalls = 0 // Dead-loop detection: count consecutive "unknown" tool calls
 
   // 5. Agentic execution loop
   while (steps < MAX_STEPS) {
@@ -588,10 +687,7 @@ export async function executeAgent(
           timestamp: Date.now(),
           stepNumber: steps,
         })
-        messages.push({
-          role: 'assistant',
-          content: contentStr || null,
-        })
+        // NOTE: Do NOT push assistant message again — it was already pushed above (line 654)
         messages.push({
           role: 'user',
           content: '⚠️ 你需要使用提供的工具来完成任务。请调用 save_storyboards 工具将分镜数据保存到数据库，而不是在文本中输出。如果你还没有读取上下文，请先调用 read_storyboard_context 工具。重要：请分批保存，每次3-5个镜头，使用append参数控制是否追加。',
@@ -607,6 +703,27 @@ export async function executeAgent(
     // 6. Execute each tool call
     for (const toolCall of assistantMessage.tool_calls) {
       const toolName = toolCall.function.name
+
+      // Dead-loop detection: if tool name is "unknown", count consecutive occurrences
+      if (toolName === 'unknown') {
+        consecutiveUnknownToolCalls++
+        if (consecutiveUnknownToolCalls >= 3) {
+          // Too many consecutive unknown tool calls — break the loop
+          console.error(`[executeAgent] Dead loop detected: ${consecutiveUnknownToolCalls} consecutive "unknown" tool calls. Breaking loop.`)
+          onProgress?.({
+            type: 'error',
+            message: `检测到LLM工具调用异常（连续${consecutiveUnknownToolCalls}次工具名称为空），可能是模型不支持function calling。请尝试更换模型。`,
+            timestamp: Date.now(),
+            stepNumber: steps,
+          })
+          finalText = `⚠️ LLM工具调用异常：模型连续返回了${consecutiveUnknownToolCalls}次无效的工具调用（工具名称为空）。这通常意味着当前模型不完全支持function calling功能。建议：1) 更换为支持function calling的模型（如DeepSeek V4 Flash、GPT-4o等）；2) 检查API供应商配置是否正确。`
+          // Break out of both the tool call loop and the step loop
+          steps = MAX_STEPS + 1 // Force exit from while loop
+          break
+        }
+      } else {
+        consecutiveUnknownToolCalls = 0 // Reset counter on successful tool call
+      }
 
       // Parse arguments — detect truncated JSON early
       let args: Record<string, unknown>

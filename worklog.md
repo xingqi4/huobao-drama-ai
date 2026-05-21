@@ -426,3 +426,25 @@ Stage Summary:
 - 修复了tool_call静默丢弃的关键bug
 - PR #15: https://github.com/dav-niu474/huobao-drama-ai/pull/15
 - commit: 208cc77
+
+---
+Task ID: pr15-batch-refactor
+Agent: Main Agent
+Task: 重构分镜生成分批保存架构 + 流式思考 + 修复超时 + 商汤模型
+
+Work Log:
+- 分析根本原因：分镜生成一次LLM调用试图输出所有镜头(10-20个)，每个镜头含详细imagePrompt+videoPrompt，总输出20K+ tokens，超过180s绝对超时
+- 重构callLLMWithTools：从绝对超时(180s)改为不活跃超时(120s无数据才abort)，每次收到chunk重置计时器
+- 添加流式思考内容：delta.content和reasoning_content实时推送到前端(400ms节流)
+- 给save_storyboards添加append参数：append=false删除旧数据，append=true追加新数据
+- 更新系统提示词：强制分批保存，第一批3-5镜头(append=false)，后续(append=true)
+- 更新SKILL.md：分批保存是强制要求
+- 修复SenseNova baseURL：从 https://api.sensenova.cn/compatible-mode/v2 改为 https://token.sensenova.cn/v1
+- 更新envKey：SENSENOVA_KEY → sensenova_key，向后兼容
+- 前端支持流式思考：thinking事件实时更新同一entry，显示思考过程内容预览
+
+Stage Summary:
+- 8个文件修改，252行新增，69行删除
+- 核心架构变更：从"一次生成所有分镜"改为"分批生成+追加保存"
+- 超时机制从绝对改为不活跃检测，大幅提升长响应可靠性
+- 已推送到PR #15 (commit 817ebd5)
