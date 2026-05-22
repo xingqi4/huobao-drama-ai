@@ -129,6 +129,26 @@ export const api = {
       fetch(`/api/dramas/${id}`, { method: 'DELETE' }).then((r) => {
         if (!r.ok) throw new Error(`Delete drama failed: ${r.status}`)
       }),
+
+    getCostStats: (id: string) =>
+      request<{
+        totalCredits: number
+        byCategory: Record<string, number>
+        byProvider: Record<string, number>
+        byModel: Record<string, { credits: number; count: number }>
+        byEpisode: Array<{ episodeId: string; episodeTitle: string; credits: number }>
+        dailyTrend: Array<{ date: string; credits: number }>
+        recentGenerations: Array<{
+          id: string
+          category: string
+          provider: string
+          model: string
+          credits: number
+          tokensUsed: number
+          count: number
+          createdAt: string
+        }>
+      }>(`/api/dramas/${id}/cost-stats`),
   },
 
   // ---- Episodes ----
@@ -924,11 +944,15 @@ export const api = {
     genre: string
     style: string
     episodes: Array<{ title: string; rawContent: string }>
+    characters?: Array<{ name: string; role?: string; gender?: string; description?: string }>
+    scenes?: Array<{ location: string; timeOfDay?: string; description?: string }>
     autoStartPipeline?: boolean
   }) =>
     request<{
       drama: Drama
       episodes: Episode[]
+      characters: Character[]
+      scenes: Scene[]
       pipelineStarted: boolean
     }>('/api/dramas/create-from-script', {
       method: 'POST',
