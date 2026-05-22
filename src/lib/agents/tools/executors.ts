@@ -301,6 +301,11 @@ const readStoryboardContext: ToolExecutor = async (_params, context) => {
 }
 
 const saveStoryboards: ToolExecutor = async (params, context) => {
+  // ── Append mode ──
+  // append=false (default): Delete all existing storyboards for this episode, then create new ones
+  // append=true: Just create new ones without deleting (for batched generation)
+  const append = params.append === true
+
   // Defensive parsing: LLMs often pass arrays as JSON strings instead of
   // actual arrays. This is the #1 cause of "无法存入数据库" errors.
   let storyboards = params.storyboards as Array<{
@@ -380,17 +385,17 @@ const saveStoryboards: ToolExecutor = async (params, context) => {
     }
   })
 
-  // Delete existing storyboards and create new ones in a transaction
-  // to prevent data loss if creates fail after deletes
   const created: Array<{ id: string; shotNumber: number }> = []
   const saveErrors: Array<{ shotNumber: number; error: string }> = []
 
   try {
     await db.$transaction(async (tx) => {
-      // Delete existing storyboards for this episode
-      await tx.storyboard.deleteMany({
-        where: { episodeId: context.episodeId },
-      })
+      // Only delete existing storyboards if NOT in append mode
+      if (!append) {
+        await tx.storyboard.deleteMany({
+          where: { episodeId: context.episodeId },
+        })
+      }
 
       // Save storyboards ONE BY ONE within the transaction
       for (const sb of validatedStoryboards) {
@@ -445,7 +450,8 @@ const saveStoryboards: ToolExecutor = async (params, context) => {
       totalAttempted: validatedStoryboards.length,
       failedCount: saveErrors.length,
       errors: saveErrors,
-      message: `已保存 ${created.length}/${validatedStoryboards.length} 个分镜镜头（${saveErrors.length}个失败）`,
+      append,
+      message: `已保存 ${created.length}/${validatedStoryboards.length} 个分镜镜头（${saveErrors.length}个失败）${append ? ' [追加模式]' : ' [替换模式]'}`,
     }
   }
 
@@ -456,7 +462,8 @@ const saveStoryboards: ToolExecutor = async (params, context) => {
   return {
     success: true,
     count: created.length,
-    message: `已保存 ${created.length} 个分镜镜头`,
+    append,
+    message: `已保存 ${created.length} 个分镜镜头${append ? ' [追加模式]' : ' [替换模式]'}`,
   }
 }
 

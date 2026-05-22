@@ -4,6 +4,9 @@
 // Sends rich structured events for frontend rendering
 // ============================================================
 
+// Allow up to 5 minutes for agent execution (storyboard generation can take 60-120s)
+export const maxDuration = 300
+
 import { NextRequest } from 'next/server'
 import { requireAuth } from '@/lib/auth-helpers'
 import { AgentType, ALL_AGENT_TYPES, AGENT_NAMES } from '@/lib/agents/types'

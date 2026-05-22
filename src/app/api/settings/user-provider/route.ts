@@ -16,11 +16,15 @@ async function isPlatformApiKey(category: string, provider: string, apiKey: stri
   })
   if (adminProvider?.apiKey && adminProvider.apiKey === apiKey) return true
 
-  // Check against env var key
+  // Check against env var key — must be consistent with getActiveProvider()'s env var resolution
   const preset = PROVIDER_PRESETS[category as AiCategory]?.find((p) => p.provider === provider)
   if (preset?.envKey) {
+    // Check all case variations, same as getActiveProvider()
     const envKey = process.env[preset.envKey]
-      || (provider === 'openrouter' ? process.env['OpenRouter_API_KEY'] : '')
+      || process.env[preset.envKey.toLowerCase()]
+      || process.env[preset.envKey.toUpperCase()]
+      || (provider === 'openrouter' ? (process.env['OpenRouter_API_KEY'] || process.env['OPENROUTER_API_KEY']) : '')
+      || (provider === 'sensenova' ? (process.env['SENSENOVA_KEY'] || process.env['sensenova_key']) : '')
       || ''
     if (envKey && envKey === apiKey) return true
   }
@@ -148,8 +152,12 @@ export async function POST(request: NextRequest) {
       await db.userProvider.deleteMany({
         where: { userId: auth.userId, category, provider },
       })
-      const providers = await buildUserProvidersMap(auth.userId)
-      return NextResponse.json({ providers })
+      // Return an ERROR response — frontend must know the save was rejected
+      // (previously returned success silently, causing confusion about persistence)
+      return NextResponse.json(
+        { error: '此 API Key 与平台共享 Key 相同，无需重复配置。您可以直接使用平台共享 Key。' },
+        { status: 409 }
+      )
     }
 
     // If setting this as active, deactivate other user providers in same category
@@ -164,6 +172,8 @@ export async function POST(request: NextRequest) {
     const preset = PROVIDER_PRESETS[category as AiCategory]?.find(
       (p) => p.provider === provider
     )
+
+    console.log(`[UserProvider POST] Saving: user=${auth.userId}, category=${category}, provider=${provider}, hasApiKey=${Boolean(apiKey)}, isActive=${isActive}`)
 
     await db.userProvider.upsert({
       where: {
@@ -189,6 +199,18 @@ export async function POST(request: NextRequest) {
         isActive: isActive !== undefined ? isActive : undefined,
       },
     })
+
+    // Verify the save worked
+    const saved = await db.userProvider.findUnique({
+      where: {
+        userId_category_provider: {
+          userId: auth.userId,
+          category,
+          provider,
+        },
+      },
+    })
+    console.log(`[UserProvider POST] Save result: found=${Boolean(saved)}, hasKey=${Boolean(saved?.apiKey)}, isActive=${saved?.isActive}`)
 
     const providers = await buildUserProvidersMap(auth.userId)
     return NextResponse.json({ providers })

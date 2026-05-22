@@ -42,7 +42,7 @@ interface ChatMessage {
 // ============================================================
 
 export interface AgentProgressEvent {
-  /** Event type: starting, thinking, tool_call, tool_result, tool_error, text_output, completed, error */
+  /** Event type: starting, thinking, tool_call, tool_result, tool_error, text_output, text_stream, completed, error */
   type: string
   /** Human-readable message */
   message: string
@@ -105,8 +105,17 @@ async function getAgentConfig(
 }
 
 // ============================================================
-// LLM Call with Tool Support
+// LLM Call with Tool Support — STREAMING
+// Uses streaming API with INACTIVITY-BASED timeout.
+// Timeout resets every time a chunk is received, so long
+// responses that are actively streaming won't be killed.
+// Only truly stalled connections (no data for 120s) are aborted.
+// Thinking content (delta.content / reasoning_content) is
+// streamed to the frontend in real-time for better UX.
 // ============================================================
+
+const LLM_INACTIVITY_TIMEOUT = 120_000 // 2 min without ANY data → abort
+const THINKING_STREAM_INTERVAL = 400   // Throttle thinking events to every 400ms
 
 async function callLLMWithTools(
   messages: ChatMessage[],
@@ -116,6 +125,8 @@ async function callLLMWithTools(
     temperature?: number
     maxTokens?: number
     userId?: string
+    onProgress?: AgentProgressCallback
+    stepNumber?: number
   }
 ): Promise<{
   message: {
@@ -140,6 +151,7 @@ async function callLLMWithTools(
     })),
     temperature: options.temperature ?? 0.7,
     max_tokens: options.maxTokens ?? 4096,
+    stream: true, // ← CRITICAL: Use streaming to prevent timeouts
   }
 
   // Add tools if provided
@@ -162,25 +174,324 @@ async function callLLMWithTools(
     headers['X-Title'] = 'AI Drama Creator'
   }
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-  })
+  // Create AbortController with inactivity-based timeout
+  // Timeout resets every time we receive ANY data from the stream
+  const controller = new AbortController()
+  let inactivityTimer = setTimeout(() => {
+    console.warn(`[callLLMWithTools] Inactivity timeout (${LLM_INACTIVITY_TIMEOUT / 1000}s) — aborting`)
+    controller.abort()
+  }, LLM_INACTIVITY_TIMEOUT)
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => 'Unknown error')
-    throw new Error(`LLM API error (${res.status}): ${text.slice(0, 300)}`)
+  const resetInactivityTimer = () => {
+    clearTimeout(inactivityTimer)
+    inactivityTimer = setTimeout(() => {
+      console.warn(`[callLLMWithTools] Inactivity timeout (${LLM_INACTIVITY_TIMEOUT / 1000}s) — aborting`)
+      controller.abort()
+    }, LLM_INACTIVITY_TIMEOUT)
   }
 
-  const data = await res.json()
-  const finishReason = data.choices?.[0]?.finish_reason ?? 'stop'
-  return {
-    message: data.choices?.[0]?.message ?? {
-      role: 'assistant',
-      content: '',
-    },
-    finishReason,
+  // Throttled thinking stream — only emit events every THINKING_STREAM_INTERVAL
+  let lastThinkingEmitTime = 0
+  let pendingThinkingContent = ''
+  let thinkingEmitTimer: ReturnType<typeof setTimeout> | null = null
+
+  const emitThinkingStream = (content: string) => {
+    pendingThinkingContent = content
+    const now = Date.now()
+    if (now - lastThinkingEmitTime >= THINKING_STREAM_INTERVAL) {
+      // Enough time has passed — emit immediately
+      lastThinkingEmitTime = now
+      options.onProgress?.({
+        type: 'thinking',
+        message: pendingThinkingContent,
+        timestamp: now,
+        stepNumber: options.stepNumber,
+      })
+      pendingThinkingContent = ''
+      if (thinkingEmitTimer) {
+        clearTimeout(thinkingEmitTimer)
+        thinkingEmitTimer = null
+      }
+    } else if (!thinkingEmitTimer) {
+      // Schedule a delayed emit to ensure the last chunk is sent
+      thinkingEmitTimer = setTimeout(() => {
+        if (pendingThinkingContent) {
+          lastThinkingEmitTime = Date.now()
+          options.onProgress?.({
+            type: 'thinking',
+            message: pendingThinkingContent,
+            timestamp: Date.now(),
+            stepNumber: options.stepNumber,
+          })
+          pendingThinkingContent = ''
+        }
+        thinkingEmitTimer = null
+      }, THINKING_STREAM_INTERVAL)
+    }
+  }
+
+  // Flush any remaining thinking content
+  const flushThinkingStream = () => {
+    if (thinkingEmitTimer) {
+      clearTimeout(thinkingEmitTimer)
+      thinkingEmitTimer = null
+    }
+    if (pendingThinkingContent) {
+      options.onProgress?.({
+        type: 'thinking',
+        message: pendingThinkingContent,
+        timestamp: Date.now(),
+        stepNumber: options.stepNumber,
+      })
+      pendingThinkingContent = ''
+    }
+  }
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    })
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => 'Unknown error')
+      throw new Error(`LLM API error (${res.status}): ${text.slice(0, 500)}`)
+    }
+
+    if (!res.body) {
+      throw new Error('LLM API returned no body')
+    }
+
+    // ── Stream reading + tool call assembly ──
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+
+    let content = ''
+    let reasoningContent = ''
+    let finishReason = ''
+    const toolCallsMap = new Map<number, { id: string; name: string; arguments: string }>()
+
+    let buffer = ''
+    let chunksReceived = 0
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      // Reset inactivity timer on every chunk received
+      resetInactivityTimer()
+      chunksReceived++
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (!trimmed || !trimmed.startsWith('data: ')) continue
+
+        const data = trimmed.slice(6)
+        if (data === '[DONE]') continue
+
+        try {
+          const chunk = JSON.parse(data)
+          const choice = chunk.choices?.[0]
+          if (!choice) continue
+
+          const delta = choice.delta
+
+          // Accumulate and stream reasoning_content (DeepSeek R1, etc.)
+          if (delta?.reasoning_content) {
+            reasoningContent += delta.reasoning_content
+            emitThinkingStream(reasoningContent)
+          }
+
+          // Accumulate and stream text content as thinking
+          if (delta?.content) {
+            content += delta.content
+            // Stream content as thinking events so user sees the LLM's
+            // thought process in real-time (especially for storyboard_breaker)
+            emitThinkingStream(content)
+          }
+
+          // Accumulate tool calls (OpenAI standard format: delta.tool_calls)
+          if (delta?.tool_calls) {
+            for (const tc of delta.tool_calls) {
+              const idx = tc.index ?? 0
+              if (!toolCallsMap.has(idx)) {
+                toolCallsMap.set(idx, {
+                  id: tc.id || '',
+                  name: tc.function?.name || '',
+                  arguments: '',
+                })
+              }
+              const existing = toolCallsMap.get(idx)!
+              if (tc.id) existing.id = tc.id
+              if (tc.function?.name) existing.name = tc.function.name
+              if (tc.function?.arguments) existing.arguments += tc.function.arguments
+            }
+          }
+
+          // Handle old OpenAI format: delta.function_call (singular)
+          // Some providers (e.g., older SenseNova) use this instead of tool_calls
+          if (delta?.function_call) {
+            const fc = delta.function_call
+            const idx = 0 // old format only supports one function call
+            if (!toolCallsMap.has(idx)) {
+              toolCallsMap.set(idx, {
+                id: '',
+                name: fc.name || '',
+                arguments: fc.arguments || '',
+              })
+            } else {
+              const existing = toolCallsMap.get(idx)!
+              if (fc.name) existing.name = fc.name
+              if (fc.arguments) existing.arguments += fc.arguments
+            }
+          }
+
+          // Handle non-standard format: some providers put tool call in choice itself
+          // (not in delta, but in the choice-level tool_calls or function_call)
+          if (!delta?.tool_calls && !delta?.function_call && choice.tool_calls) {
+            for (let i = 0; i < choice.tool_calls.length; i++) {
+              const tc = choice.tool_calls[i]
+              const idx = tc.index ?? i  // Use loop index as fallback to avoid collision
+              if (!toolCallsMap.has(idx)) {
+                toolCallsMap.set(idx, {
+                  id: tc.id || '',
+                  name: tc.function?.name || '',
+                  arguments: tc.function?.arguments || '',
+                })
+              } else {
+                const existing = toolCallsMap.get(idx)!
+                if (tc.id) existing.id = tc.id
+                if (tc.function?.name) existing.name = tc.function.name
+                if (tc.function?.arguments) existing.arguments += tc.function.arguments
+              }
+            }
+          }
+
+          // Capture finish reason
+          if (choice.finish_reason) {
+            finishReason = choice.finish_reason
+          }
+        } catch {
+          // Ignore JSON parse errors on individual chunks
+        }
+      }
+    }
+
+    // Flush any remaining thinking content
+    flushThinkingStream()
+
+    // Clear timers
+    clearTimeout(inactivityTimer)
+    if (thinkingEmitTimer) clearTimeout(thinkingEmitTimer)
+
+    console.log(`[callLLMWithTools] Stream completed: ${chunksReceived} chunks, content=${content.length}chars, reasoning=${reasoningContent.length}chars, toolCalls=${toolCallsMap.size}, finish=${finishReason}, max_tokens=${options.maxTokens}`)
+
+    // Log each tool call's argument length for debugging truncation issues
+    for (const [idx, tc] of toolCallsMap) {
+      console.log(`[callLLMWithTools] Tool[${idx}]: name=${tc.name}, argsLen=${tc.arguments.length}, id=${tc.id}`)
+    }
+
+    // ── Non-streaming fallback when tool call parsing fails ──
+    // If streaming didn't properly capture tool call names (some providers
+    // don't stream tool calls correctly), retry with a non-streaming request
+    const hasEmptyToolNames = [...toolCallsMap.values()].some(tc => !tc.name && tc.arguments)
+    const hasToolCallsWithNoNameOrArgs = [...toolCallsMap.values()].some(tc => !tc.name && !tc.arguments)
+    // Also check: if content looks like it might contain a tool call attempt
+    // (e.g., the LLM output the tool call as text instead of proper format)
+    const toolNames = tools.map(t => t.function?.name).filter(Boolean)
+    const contentLooksLikeToolCall = content && !toolCallsMap.size &&
+      toolNames.some(name => content.includes(name!))
+
+    if ((hasEmptyToolNames || hasToolCallsWithNoNameOrArgs || contentLooksLikeToolCall) && tools.length > 0) {
+      console.warn(`[callLLMWithTools] Streaming tool call parsing failed (emptyNames=${hasEmptyToolNames}, noNameNoArgs=${hasToolCallsWithNoNameOrArgs}, contentLikeToolCall=${contentLooksLikeToolCall}), retrying with non-streaming request`)
+      try {
+        const nonStreamRes = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ ...body, stream: false }),
+          signal: AbortSignal.timeout(180_000), // 3 min timeout for non-streaming
+        })
+        if (nonStreamRes.ok) {
+          const nonStreamData = await nonStreamRes.json()
+          const nsChoice = nonStreamData.choices?.[0]
+          if (nsChoice) {
+            // Override content and finish reason from non-streaming response
+            if (nsChoice.message?.content) content = nsChoice.message.content
+            if (nsChoice.finish_reason) finishReason = nsChoice.finish_reason
+            // Clear and rebuild tool calls from non-streaming response
+            if (nsChoice.message?.tool_calls?.length) {
+              toolCallsMap.clear()
+              for (const tc of nsChoice.message.tool_calls) {
+                toolCallsMap.set(toolCallsMap.size, {
+                  id: tc.id || '',
+                  name: tc.function?.name || '',
+                  arguments: tc.function?.arguments || '',
+                })
+              }
+              console.log(`[callLLMWithTools] Non-streaming fallback succeeded: ${toolCallsMap.size} tool calls recovered`)
+            } else if (nsChoice.message?.function_call) {
+              // Old format: single function_call
+              toolCallsMap.clear()
+              toolCallsMap.set(0, {
+                id: '',
+                name: nsChoice.message.function_call.name || '',
+                arguments: nsChoice.message.function_call.arguments || '',
+              })
+              console.log(`[callLLMWithTools] Non-streaming fallback (function_call format): name=${nsChoice.message.function_call.name}`)
+            } else if (nsChoice.message?.content) {
+              // LLM output text instead of calling tools — this is fine,
+              // the agentic loop will handle it (nudge logic)
+              console.log(`[callLLMWithTools] Non-streaming response is text-only (no tool calls) — content=${nsChoice.message.content.slice(0, 100)}...`)
+            }
+          }
+        } else {
+          console.warn(`[callLLMWithTools] Non-streaming fallback failed: ${nonStreamRes.status}`)
+        }
+      } catch (nsErr) {
+        console.warn(`[callLLMWithTools] Non-streaming fallback error: ${nsErr instanceof Error ? nsErr.message : String(nsErr)}`)
+      }
+    }
+
+    // Assemble final message
+    const toolCalls: ToolCallMessage[] = []
+    for (const [idx, tc] of toolCallsMap) {
+      // Some LLM providers don't send tool_call id in the first chunk,
+      // or send it as empty string. Generate a fallback id if missing.
+      const toolCallId = tc.id || `tool_call_${idx}_${Date.now()}`
+      const toolCallName = tc.name || 'unknown'
+      console.log(`[callLLMWithTools] Tool[${idx}]: name=${tc.name}, id=${tc.id}, argsLen=${tc.arguments.length}, fallbackId=${toolCallId}`)
+      toolCalls.push({
+        id: toolCallId,
+        type: 'function',
+        function: {
+          name: toolCallName,
+          arguments: tc.arguments || '{}',
+        },
+      })
+    }
+
+    return {
+      message: {
+        role: 'assistant',
+        content: content || null,
+        ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+      },
+      finishReason: finishReason || 'stop',
+    }
+  } catch (error) {
+    clearTimeout(inactivityTimer)
+    if (thinkingEmitTimer) clearTimeout(thinkingEmitTimer)
+
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error(`LLM API调用超时（${LLM_INACTIVITY_TIMEOUT / 1000}秒内无数据返回），模型可能已停止响应。请尝试使用更快的模型或减少单次数据量。`)
+    }
+    throw error
   }
 }
 
@@ -212,14 +523,25 @@ export async function executeAgent(
   const model = options?.modelOverride || dbConfig?.model || undefined
   const temperature = dbConfig?.temperature ?? 0.7
   // storyboard_breaker needs much larger max_tokens because save_storyboards
-  // tool call contains full storyboard JSON (imagePrompt + videoPrompt per shot)
-  // which can easily exceed 4096 tokens for 15-20 shots
+  // tool call contains full storyboard JSON (imagePrompt + videoPrompt per shot).
+  // ⚠️ IMPORTANT: The AgentConfig table has maxTokens @default(4096), and the
+  // PATCH API creates rows with 4096 when not specified. We must NOT let a DB
+  // value of 4096 override the type-specific default (e.g., 32768 for storyboard_breaker).
+  // Strategy: only use DB value if it EXCEEDS the type-specific default; otherwise
+  // the DB value is likely a stale/generic default and should be ignored.
   const defaultMaxTokens: Record<string, number> = {
-    storyboard_breaker: 16384,
+    storyboard_breaker: 32768,
     extractor: 8192,
     script_rewriter: 8192,
   }
-  const maxTokens = dbConfig?.maxTokens ?? defaultMaxTokens[agentType] ?? 4096
+  const typeDefault = defaultMaxTokens[agentType] ?? 4096
+  // Use DB value only if it's explicitly set to a value larger than the type default
+  // (i.e., the admin intentionally increased it). Otherwise, use the type default.
+  const maxTokens = (dbConfig?.maxTokens && dbConfig.maxTokens > typeDefault)
+    ? dbConfig.maxTokens
+    : typeDefault
+
+  console.log(`[executeAgent] agentType=${agentType}, dbMaxTokens=${dbConfig?.maxTokens}, typeDefault=${typeDefault}, finalMaxTokens=${maxTokens}`)
 
   // 2. Build instructions (base prompt + skill)
   const skillContent = loadAgentSkill(agentType)
@@ -255,6 +577,7 @@ export async function executeAgent(
 
   let steps = 0
   let finalText = ''
+  let consecutiveUnknownToolCalls = 0 // Dead-loop detection: count consecutive "unknown" tool calls
 
   // 5. Agentic execution loop
   while (steps < MAX_STEPS) {
@@ -272,6 +595,8 @@ export async function executeAgent(
       temperature,
       maxTokens,
       userId: options?.userId,
+      onProgress,
+      stepNumber: steps,
     })
 
     const assistantMessage = response.message
@@ -282,7 +607,7 @@ export async function executeAgent(
     if (finishReason === 'length') {
       onProgress?.({
         type: 'tool_error',
-        message: `步骤 ${steps}: LLM输出被截断（达到max_tokens=${maxTokens}限制），请减少单次数据量或分批保存`,
+        message: `步骤 ${steps}: LLM输出被截断（达到max_tokens=${maxTokens}限制），正在分批重试...`,
         timestamp: Date.now(),
         stepNumber: steps,
       })
@@ -300,7 +625,7 @@ export async function executeAgent(
           messages.push({
             role: 'tool',
             content: JSON.stringify({
-              error: `⚠️ 你的输出被截断了！arguments不完整导致JSON解析失败。请将save_storyboards拆分为多次调用，每次保存3-5个分镜即可。`,
+              error: `⚠️ 你的输出被截断了！arguments不完整导致JSON解析失败。请将save_storyboards拆分为多次调用，每次保存3-5个分镜，并设置append=true（第一次除外）。`,
             }),
             tool_call_id: tc.id,
           })
@@ -315,7 +640,7 @@ export async function executeAgent(
       })
       messages.push({
         role: 'user',
-        content: '⚠️ 你的上一次输出被截断了（达到max_tokens限制）。请继续输出，或者减少输出量。',
+        content: '⚠️ 你的上一次输出被截断了（达到max_tokens限制）。请继续输出，或者减少输出量，分批保存。',
       })
       continue
     }
@@ -346,8 +671,34 @@ export async function executeAgent(
       !assistantMessage.tool_calls ||
       assistantMessage.tool_calls.length === 0
     ) {
+      // No tool calls — check if the LLM should have called a tool but didn't
+      // (e.g., the model doesn't support function calling, or it's generating
+      // text output instead of tool calls)
+      const hasToolDefinitions = openAITools.length > 0
+      const isStoryboardBreaker = agentType === 'storyboard_breaker'
+      const shouldUseTools = hasToolDefinitions && isStoryboardBreaker && steps < MAX_STEPS - 2
+      const contentStr = assistantMessage.content || ''
+
+      // If this is storyboard_breaker and it hasn't called any tools yet,
+      // it might be outputting the storyboard as text instead of calling save_storyboards.
+      // Nudge it to use the tool.
+      if (shouldUseTools && toolCallResults.length === 0) {
+        onProgress?.({
+          type: 'thinking',
+          message: `步骤 ${steps}: LLM未调用工具，正在引导使用save_storyboards...`,
+          timestamp: Date.now(),
+          stepNumber: steps,
+        })
+        // NOTE: Do NOT push assistant message again — it was already pushed above (line 654)
+        messages.push({
+          role: 'user',
+          content: '⚠️ 你需要使用提供的工具来完成任务。请调用 save_storyboards 工具将分镜数据保存到数据库，而不是在文本中输出。如果你还没有读取上下文，请先调用 read_storyboard_context 工具。重要：请分批保存，每次3-5个镜头，使用append参数控制是否追加。',
+        })
+        continue
+      }
+
       // No more tool calls — we're done
-      finalText = assistantMessage.content || ''
+      finalText = contentStr
       break
     }
 
@@ -355,13 +706,38 @@ export async function executeAgent(
     for (const toolCall of assistantMessage.tool_calls) {
       const toolName = toolCall.function.name
 
+      // Dead-loop detection: if tool name is "unknown", count consecutive occurrences
+      if (toolName === 'unknown') {
+        consecutiveUnknownToolCalls++
+        if (consecutiveUnknownToolCalls >= 3) {
+          // Too many consecutive unknown tool calls — break the loop
+          console.error(`[executeAgent] Dead loop detected: ${consecutiveUnknownToolCalls} consecutive "unknown" tool calls. Breaking loop.`)
+          onProgress?.({
+            type: 'error',
+            message: `检测到LLM工具调用异常（连续${consecutiveUnknownToolCalls}次工具名称为空），可能是模型不支持function calling。请尝试更换模型。`,
+            timestamp: Date.now(),
+            stepNumber: steps,
+          })
+          finalText = `⚠️ LLM工具调用异常：模型连续返回了${consecutiveUnknownToolCalls}次无效的工具调用（工具名称为空）。这通常意味着当前模型不完全支持function calling功能。建议：1) 更换为支持function calling的模型（如DeepSeek V4 Flash、GPT-4o等）；2) 检查API供应商配置是否正确。`
+          // Break out of both the tool call loop and the step loop
+          steps = MAX_STEPS + 1 // Force exit from while loop
+          break
+        }
+      } else {
+        consecutiveUnknownToolCalls = 0 // Reset counter on successful tool call
+      }
+
       // Parse arguments — detect truncated JSON early
       let args: Record<string, unknown>
       try {
         args = JSON.parse(toolCall.function.arguments)
       } catch (parseErr) {
-        // JSON parse failed — likely due to max_tokens truncation
-        const parseErrorMsg = `JSON解析失败：${parseErr instanceof Error ? parseErr.message : String(parseErr)}. 参数可能被截断。请减少数据量或分批调用。前50字符: ${toolCall.function.arguments.slice(0, 50)}...`
+        // JSON parse failed — likely due to max_tokens truncation.
+        // Give the LLM clear instructions to split into smaller batches.
+        const isSaveStoryboards = toolName === 'save_storyboards'
+        const parseErrorMsg = isSaveStoryboards
+          ? `JSON解析失败：你的save_storyboards参数被截断了（输出超过max_tokens限制）。请将分镜拆分为多次调用，每次只保存3-5个分镜。第一次调用：save_storyboards(storyboards=[镜头1-5], append=false)，后续调用：save_storyboards(storyboards=[镜头6-10], append=true)，以此类推。解析错误: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`
+          : `JSON解析失败：${parseErr instanceof Error ? parseErr.message : String(parseErr)}. 参数可能被截断。请减少数据量或分批调用。前50字符: ${toolCall.function.arguments.slice(0, 50)}...`
         messages.push({
           role: 'tool',
           content: JSON.stringify({ error: parseErrorMsg }),
@@ -374,7 +750,7 @@ export async function executeAgent(
         })
         onProgress?.({
           type: 'tool_error',
-          message: `工具 ${toolName} 参数解析失败: ${parseErrorMsg}`,
+          message: `工具 ${toolName} 参数解析失败（可能被截断），已请求LLM分批重试`,
           timestamp: Date.now(),
           stepNumber: steps,
           toolResult: { name: toolName, error: parseErrorMsg },
@@ -453,6 +829,19 @@ export async function executeAgent(
             result,
           },
         })
+
+        // After successful save_storyboards with append=false, instruct the LLM
+        // to continue with append=true for subsequent batches
+        if (toolName === 'save_storyboards' && !args.append) {
+          const savedCount = (result as any)?.count || 0
+          const totalExpected = 15 // rough estimate, LLM knows the actual count
+          if (savedCount < totalExpected) {
+            messages.push({
+              role: 'user',
+              content: `✅ 已保存第一批 ${savedCount} 个分镜。请继续生成剩余分镜，调用 save_storyboards 时设置 append=true 来追加保存，不要覆盖已有数据。每次保存3-5个镜头即可。`,
+            })
+          }
+        }
       } catch (error) {
         const errorMsg =
           error instanceof Error ? error.message : String(error)
@@ -550,8 +939,11 @@ function summarizeToolResult(toolName: string, result: unknown): string {
     }
     case 'read_storyboard_context':
       return `读取到剧本、${String((r as any).characters?.length || 0)}个角色、${String((r as any).scenes?.length || 0)}个场景`
-    case 'save_storyboards':
-      return r.success ? `已保存 ${r.count} 个分镜镜头` : '保存失败'
+    case 'save_storyboards': {
+      const count = r.count || 0
+      const append = r.append ? '(追加模式)' : '(替换模式)'
+      return r.success ? `已保存 ${count} 个分镜镜头${append}` : '保存失败'
+    }
     case 'update_storyboard':
       return r.success ? `镜头已更新` : '更新失败'
     case 'get_characters':

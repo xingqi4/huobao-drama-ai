@@ -70,6 +70,14 @@ export async function GET(
 
   const skillContent = loadAgentSkill(agentType)
 
+  // Agent-type-specific default maxTokens
+  const defaultMaxTokensByType: Record<string, number> = {
+    storyboard_breaker: 32768,
+    extractor: 8192,
+    script_rewriter: 8192,
+  }
+  const typeDefaultMaxTokens = defaultMaxTokensByType[agentType] ?? 4096
+
   return NextResponse.json({
     agentType,
     name: AGENT_NAMES[agentType],
@@ -78,7 +86,9 @@ export async function GET(
       systemPrompt: dbConfig?.systemPrompt || DEFAULT_SYSTEM_PROMPTS[agentType],
       model: dbConfig?.model || null,
       temperature: dbConfig?.temperature ?? 0.7,
-      maxTokens: dbConfig?.maxTokens ?? 4096,
+      maxTokens: (dbConfig?.maxTokens && dbConfig.maxTokens >= typeDefaultMaxTokens)
+        ? dbConfig.maxTokens
+        : typeDefaultMaxTokens,
       isActive: dbConfig?.isActive ?? true,
     },
     hasSkill: !!skillContent,
@@ -150,6 +160,14 @@ export async function PATCH(
 
     // Upsert: create if not exists, update if exists
     const defaultPrompt = DEFAULT_SYSTEM_PROMPTS[agentType]
+    // Agent-type-specific default maxTokens — storyboard_breaker needs much more
+    // because save_storyboards tool call contains full storyboard JSON
+    const defaultMaxTokensByType: Record<string, number> = {
+      storyboard_breaker: 32768,
+      extractor: 8192,
+      script_rewriter: 8192,
+    }
+    const typeDefaultMaxTokens = defaultMaxTokensByType[agentType] ?? 4096
     const updated = await agentConfigModel.upsert({
       where: { agentType },
       update: updateData,
@@ -158,7 +176,7 @@ export async function PATCH(
         systemPrompt: body.systemPrompt ?? defaultPrompt,
         model: body.model ?? null,
         temperature: body.temperature ?? 0.7,
-        maxTokens: body.maxTokens ?? 4096,
+        maxTokens: body.maxTokens ?? typeDefaultMaxTokens,
         isActive: body.isActive ?? true,
       },
     })

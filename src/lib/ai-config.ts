@@ -51,7 +51,7 @@ export async function getActiveProvider(category: AiCategory): Promise<ProviderC
     const preset = PROVIDER_PRESETS[category]?.find((p) => p.provider === dbProvider.provider)
     const needsNoKey = noKeyProviders.includes(dbProvider.provider)
     const hasApiKey = Boolean(dbProvider.apiKey)
-    const envApiKey = preset?.envKey ? (process.env[preset.envKey] || '') : ''
+    const envApiKey = preset?.envKey ? (process.env[preset.envKey] || process.env[preset.envKey.toLowerCase()] || '') : ''
     // Only use this DB record if it has an apiKey, can fall back to env, or doesn't need one
     if (hasApiKey || envApiKey || needsNoKey) {
       return {
@@ -67,12 +67,15 @@ export async function getActiveProvider(category: AiCategory): Promise<ProviderC
   }
 
   // Fallback: check env vars (only for providers that have env keys)
-  // Supports both uppercase (OPENROUTER_API_KEY) and mixed-case (OpenRouter_API_KEY)
+  // Supports both uppercase and lowercase env var names
   const presets = PROVIDER_PRESETS[category]
   for (const preset of presets) {
     if (!preset.envKey) continue
     const apiKey = process.env[preset.envKey]
+      || process.env[preset.envKey.toLowerCase()]
+      || process.env[preset.envKey.toUpperCase()]
       || (preset.provider === 'openrouter' ? process.env['OpenRouter_API_KEY'] : '')
+      || (preset.provider === 'sensenova' ? process.env['SENSENOVA_KEY'] : '')
       || ''
     if (apiKey) {
       return {
@@ -154,15 +157,18 @@ export async function getAllProviders(category: AiCategory): Promise<ProviderCon
     const existing = dbProviders.find((p) => p.provider === preset.provider)
     // Use || instead of ?? because Prisma stores '' (empty string) not null
     // ?? treats '' as a real value and won't fall back to preset defaults
-    // Support both uppercase and mixed-case env var names
-    // e.g., OPENROUTER_API_KEY and OpenRouter_API_KEY
+    // Support both uppercase and lowercase env var names
     const envApiKey = (() => {
       if (!preset.envKey) return ''
-      const val = process.env[preset.envKey]
+      const val = process.env[preset.envKey] || process.env[preset.envKey.toLowerCase()] || process.env[preset.envKey.toUpperCase()]
       if (val) return val
       // Fallback: try OpenRouter_API_KEY for openrouter provider
       if (preset.provider === 'openrouter' && process.env['OpenRouter_API_KEY']) {
         return process.env['OpenRouter_API_KEY']
+      }
+      // Fallback: try SENSENOVA_KEY for sensenova provider (legacy env var name)
+      if (preset.provider === 'sensenova' && process.env['SENSENOVA_KEY']) {
+        return process.env['SENSENOVA_KEY']
       }
       return ''
     })()
@@ -293,23 +299,40 @@ export async function autoInitProviders(): Promise<string[]> {
     where: { category: 'llm', isActive: true },
   })
 
-  // If no LLM is active, auto-configure OpenRouter from env var
+  // If no LLM is active, auto-configure from env var
   if (!activeLlm) {
-    // Support both OPENROUTER_API_KEY and OpenRouter_API_KEY (case-insensitive env vars)
-    const openrouterKey = process.env.OPENROUTER_API_KEY || process.env.OpenRouter_API_KEY || ''
-    const preset = PROVIDER_PRESETS.llm.find((p) => p.provider === 'openrouter')
+    // Try SenseNova first (商汤日日新 — DeepSeek V4 Flash 限时免费)
+    const sensenovaKey = process.env.SENSENOVA_KEY || process.env.sensenova_key || ''
+    const sensenovaPreset = PROVIDER_PRESETS.llm.find((p) => p.provider === 'sensenova')
 
-    if (preset && openrouterKey) {
+    if (sensenovaPreset && sensenovaKey) {
       await saveProviderConfig({
         category: 'llm',
-        provider: 'openrouter',
-        name: preset.name,
-        apiKey: openrouterKey,
-        baseUrl: preset.defaultBaseUrl,
-        model: preset.defaultModel,
+        provider: 'sensenova',
+        name: sensenovaPreset.name,
+        apiKey: sensenovaKey,
+        baseUrl: sensenovaPreset.defaultBaseUrl,
+        model: sensenovaPreset.defaultModel,
         isActive: true,
       })
-      initialized.push(`llm:openrouter (${preset.name})`)
+      initialized.push(`llm:sensenova (${sensenovaPreset.name})`)
+    } else {
+      // Fallback: try OpenRouter
+      const openrouterKey = process.env.OPENROUTER_API_KEY || process.env.OpenRouter_API_KEY || ''
+      const preset = PROVIDER_PRESETS.llm.find((p) => p.provider === 'openrouter')
+
+      if (preset && openrouterKey) {
+        await saveProviderConfig({
+          category: 'llm',
+          provider: 'openrouter',
+          name: preset.name,
+          apiKey: openrouterKey,
+          baseUrl: preset.defaultBaseUrl,
+          model: preset.defaultModel,
+          isActive: true,
+        })
+        initialized.push(`llm:openrouter (${preset.name})`)
+      }
     }
   }
 

@@ -110,6 +110,22 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
       ],
     },
     {
+      provider: 'sensenova',
+      name: '商汤 SenseNova',
+      defaultBaseUrl: 'https://token.sensenova.cn/v1',
+      defaultModel: 'deepseek-v4-flash',
+      description: '商汤日日新大模型平台 — DeepSeek V4 Flash 限时免费，支持 function calling，OpenAI 兼容接口',
+      envKey: 'sensenova_key',
+      availableModels: [
+        { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', tags: ['免费', '推荐', '最新'] },
+        { id: 'SenseChat-5', name: 'SenseChat-5', tags: ['推荐'] },
+        { id: 'SenseChat-5-Pro', name: 'SenseChat-5 Pro', tags: ['高级'] },
+        { id: 'DeepSeek-V3', name: 'DeepSeek V3' },
+        { id: 'Qwen3-235B-A22B', name: 'Qwen3 235B' },
+        { id: 'Qwen3-30B-A3B', name: 'Qwen3 30B', tags: ['快速'] },
+      ],
+    },
+    {
       provider: 'openrouter',
       name: 'OpenRouter',
       defaultBaseUrl: 'https://openrouter.ai/api/v1',

@@ -40,7 +40,7 @@ import { StoryboardPanel } from '@/components/episode/storyboard-panel'
 import { ProductionPanel } from '@/components/episode/production-panel'
 
 // Shared types & helpers
-import type { StepKey, StepDef, UploadOptions, BatchProgress, PipelineStepKey, PipelineStatus, VoiceInfo, MergeStatus, GridConfig, GridGenerationState } from '@/components/episode/types'
+import type { StepKey, StepDef, UploadOptions, BatchProgress, PipelineStepKey, PipelineStepStatus, PipelineStatus, VoiceInfo, MergeStatus, GridConfig, GridGenerationState } from '@/components/episode/types'
 import { STEPS, PIPELINE_STEPS, PIPELINE_TO_STEP_MAP, statusBadge, panelVariants } from '@/components/episode/helpers'
 
 // ── Main component ───────────────────────────────────────────
@@ -615,9 +615,24 @@ export function EpisodeWorkspace() {
         }
       } else {
         // No storyboards saved — provide actionable diagnostics
-        const diagInfo = result.toolErrors.length > 0
-          ? `错误详情：${result.toolErrors.slice(0, 2).join('；')}`
-          : 'AI可能未能成功调用保存工具，请重新生成或检查网络。'
+        const agentError = agentExec.errors['storyboard_breaker']
+        let diagInfo: string
+        if (agentError) {
+          // Top-level agent error (e.g., LLM timeout, API error)
+          if (agentError.includes('超时') || agentError.includes('timeout') || agentError.includes('timed out')) {
+            diagInfo = `LLM响应超时，模型生成时间过长。建议：1) 在设置中切换更快的模型；2) 缩短剧本后再试。错误：${agentError}`
+          } else if (agentError.includes('未配置') || agentError.includes('API Key')) {
+            diagInfo = `LLM供应商未配置或API Key无效。请在设置中检查API Key配置。错误：${agentError}`
+          } else if (agentError.includes('429') || agentError.includes('rate')) {
+            diagInfo = `API调用频率超限，请稍后重试。错误：${agentError}`
+          } else {
+            diagInfo = `Agent执行失败：${agentError}`
+          }
+        } else if (result.toolErrors.length > 0) {
+          diagInfo = `工具执行错误：${result.toolErrors.slice(0, 3).join('；')}`
+        } else {
+          diagInfo = 'AI未能成功调用save_storyboards工具。可能原因：1) LLM输出被截断（max_tokens不够）——已自动调高至32768，请重试；2) LLM没有正确调用工具——已添加自动引导逻辑；3) 当前模型不支持function calling——请切换到支持function calling的模型（如GPT-4o、DeepSeek V4、Qwen3等）。建议：在设置中检查LLM模型是否支持工具调用。'
+        }
         showResultDialog('error', '分镜生成失败', diagInfo)
       }
     } catch (err) {

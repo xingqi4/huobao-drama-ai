@@ -349,3 +349,102 @@ Stage Summary:
 - 11 files changed, +977/-50 lines
 - All P2 items completed: config lock, grid UI, FFmpeg compose UI, reference images
 - Deployment live at huobao-drama-ai.vercel.app
+
+---
+Task ID: 5
+Agent: Main Agent
+Task: 全面修复分镜保存失败 — save_storyboards工具调用问题
+
+Work Log:
+- 深度分析了完整的调用链：前端 → SSE API → executeAgent → callLLMWithTools → tool executor → DB
+- 识别了6个根因，按优先级排序：
+  1. max_tokens被DB AgentConfig覆盖为4096（而storyboard_breaker需要32768）
+  2. LLM输出纯文本而不调用工具时缺少引导逻辑
+  3. JSON解析失败时没有明确的分批重试指令
+  4. System Prompt与截断恢复逻辑冲突
+  5. AgentConfig PATCH API创建时使用通用默认值4096
+  6. 诊断日志不足
+
+修复内容：
+1. **factory.ts** - max_tokens回退逻辑：
+   - 改用条件判断替代??运算符：仅当DB值大于type-specific默认值时才使用DB值
+   - storyboard_breaker默认max_tokens从16384提升至32768
+   - 添加executeAgent日志记录max_tokens决策过程
+   - 添加callLLMWithTools日志记录每个tool_call的参数长度
+
+2. **factory.ts** - LLM未调用工具时的自动引导：
+   - 检测到storyboard_breaker没有调用任何工具时，自动追加消息引导LLM使用save_storyboards
+   - 避免LLM在文本中输出分镜数据而不是调用工具保存
+
+3. **factory.ts** - JSON解析失败时的分批重试指令：
+   - save_storyboards参数被截断时，明确指示LLM分批保存（每次3-5个分镜）
+   - 提供具体的分批示例格式
+
+4. **prompts.ts** - System Prompt与截断恢复逻辑对齐：
+   - 将"必须一次性保存"改为"优先一次保存，失败时自动分批"
+   - 消除了与截断恢复逻辑的冲突
+
+5. **agent/[type]/route.ts** - AgentConfig PATCH API：
+   - 创建时使用agent-type差异化默认值（storyboard_breaker: 32768）
+   - GET API返回config时也使用相同的差异化逻辑
+
+6. **episode-workspace.tsx** - 改进错误诊断信息：
+   - 更新了兜底错误消息，说明已做的修复和建议
+
+Build: ✅ next build 成功
+Push: ✅ 推送到 fix/streaming-llm-storyboard-save (PR #15)
+
+Stage Summary:
+- 6个修复点全部实现，4个文件修改，81行新增/13行删除
+- 核心修复：max_tokens从4096提升至32768，且不再被DB覆盖
+- 新增LLM工具调用引导和分批重试机制
+- PR #15: https://github.com/dav-niu474/huobao-drama-ai/pull/15
+
+---
+Task ID: 6
+Agent: Main Agent
+Task: 添加商汤SenseNova LLM供应商 + 继续修复分镜生成问题
+
+Work Log:
+- 搜索并阅读商汤SenseNova API文档
+  - base_url: https://api.sensenova.cn/compatible-mode/v2
+  - OpenAI兼容接口，支持function calling
+  - 默认模型: deepseek-v4-flash (限时免费)
+  - 环境变量: sensenova_key
+- 在provider-presets.ts中添加sensenova供应商
+- 在ai-config.ts中添加sensenova自动初始化（优先于OpenRouter）
+- 修复env key大小写兼容：SENSENOVA_KEY / sensenova_key均支持
+- 发现并修复关键bug：tool_call ID缺失时静默丢弃
+  - 之前：tc.id为空时整个tool_call被丢弃→LLM看似未调用save_storyboards
+  - 现在：生成fallback id确保tool_call不会被静默丢弃
+  - 这是分镜保存失败的重要根因之一
+- 更新.env.example添加SENSENOVA_KEY
+
+Stage Summary:
+- 5个文件修改，116行新增/27行删除
+- SenseNova供应商已添加，支持DeepSeek V4 Flash免费模型
+- 修复了tool_call静默丢弃的关键bug
+- PR #15: https://github.com/dav-niu474/huobao-drama-ai/pull/15
+- commit: 208cc77
+
+---
+Task ID: pr15-batch-refactor
+Agent: Main Agent
+Task: 重构分镜生成分批保存架构 + 流式思考 + 修复超时 + 商汤模型
+
+Work Log:
+- 分析根本原因：分镜生成一次LLM调用试图输出所有镜头(10-20个)，每个镜头含详细imagePrompt+videoPrompt，总输出20K+ tokens，超过180s绝对超时
+- 重构callLLMWithTools：从绝对超时(180s)改为不活跃超时(120s无数据才abort)，每次收到chunk重置计时器
+- 添加流式思考内容：delta.content和reasoning_content实时推送到前端(400ms节流)
+- 给save_storyboards添加append参数：append=false删除旧数据，append=true追加新数据
+- 更新系统提示词：强制分批保存，第一批3-5镜头(append=false)，后续(append=true)
+- 更新SKILL.md：分批保存是强制要求
+- 修复SenseNova baseURL：从 https://api.sensenova.cn/compatible-mode/v2 改为 https://token.sensenova.cn/v1
+- 更新envKey：SENSENOVA_KEY → sensenova_key，向后兼容
+- 前端支持流式思考：thinking事件实时更新同一entry，显示思考过程内容预览
+
+Stage Summary:
+- 8个文件修改，252行新增，69行删除
+- 核心架构变更：从"一次生成所有分镜"改为"分批生成+追加保存"
+- 超时机制从绝对改为不活跃检测，大幅提升长响应可靠性
+- 已推送到PR #15 (commit 817ebd5)
