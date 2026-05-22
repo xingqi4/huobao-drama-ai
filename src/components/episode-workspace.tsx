@@ -348,10 +348,10 @@ export function EpisodeWorkspace() {
   const getPipelineStepStatus = useCallback(
     (key: PipelineStepKey): 'pending' | 'active' | 'completed' => {
       if (pipelineStatus?.pipeline?.[key]) {
-        const raw = pipelineStatus.pipeline[key].status as string
-        // Map server status to UI status
-        if (raw === 'done') return 'completed'
-        if (raw === 'partial') return 'active'
+        const status = pipelineStatus.pipeline[key].status
+        // api.ts already maps: done→completed, partial→active, pending→pending
+        if (status === 'completed') return 'completed'
+        if (status === 'active') return 'active'
         return 'pending'
       }
       return 'pending'
@@ -1996,56 +1996,44 @@ export function EpisodeWorkspace() {
                           </button>
 
                           {/* Stage sub-steps */}
-                          <div className="ml-2 border-l border-border/30 pl-0.5">
+                          <div className="ml-2 pl-0.5 space-y-1 mt-1">
                             {stageSteps.map((step) => {
                               const stepStatus = getPipelineStepStatus(step.key)
                               const isActive = activePipelineStep === step.key
-                              const completionInfo = getStepCompletionInfo(step.key)
+                              const isCompleted = stepStatus === 'completed'
+                              const isProcessing = stepStatus === 'active'
                               return (
                                 <button
                                   key={step.key}
                                   onClick={() => handlePipelineStepClick(step.key)}
-                                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-r-md text-left transition-all duration-150 group ${
+                                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-all duration-150 ${
                                     isActive
-                                      ? 'bg-primary/10 text-primary'
-                                      : stepStatus === 'completed'
-                                        ? 'text-emerald-600 hover:bg-emerald-500/5'
-                                        : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                                      ? 'bg-blue-500/6 border-l-2 border-l-blue-500'
+                                      : isCompleted
+                                        ? 'bg-muted/40 hover:bg-muted/60'
+                                        : 'hover:bg-muted/30'
                                   }`}
                                 >
                                   {/* Status indicator */}
-                                  <div className="flex-shrink-0 size-5 rounded-full flex items-center justify-center">
-                                    {stepStatus === 'completed' ? (
-                                      <div className="size-5 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                                        <Check className="size-3 text-emerald-500" />
-                                      </div>
-                                    ) : stepStatus === 'active' ? (
-                                      <div className="size-5 rounded-full bg-primary/20 flex items-center justify-center">
-                                        <Loader2 className="size-2.5 text-primary animate-spin" />
-                                      </div>
+                                  <div className="flex-shrink-0 w-4 text-center">
+                                    {isCompleted ? (
+                                      <Check className="size-3.5 text-green-500 mx-auto" />
+                                    ) : isProcessing ? (
+                                      <Loader2 className="size-3.5 text-blue-500 animate-spin mx-auto" />
                                     ) : (
-                                      <div className="size-5 rounded-full bg-muted flex items-center justify-center">
-                                        <span className="text-[9px] font-bold text-muted-foreground">
-                                          {step.stepNumber}
-                                        </span>
-                                      </div>
+                                      <span className="text-[9px] font-bold text-muted-foreground/60">{step.stepNumber}</span>
                                     )}
                                   </div>
 
-                                  <div className="flex-1 min-w-0">
-                                    <span className={`text-[11px] font-medium ${isActive ? 'text-primary' : ''}`}>
-                                      {step.label}
-                                    </span>
-                                    {completionInfo && !completionInfo.startsWith('待') && step.key !== 'script:raw' && step.key !== 'script:rewrite' && (
-                                      <div className="text-[9px] text-muted-foreground/70 mt-0.5 truncate">
-                                        {completionInfo}
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  {isActive && (
-                                    <ChevronRight className="size-2.5 text-primary flex-shrink-0" />
-                                  )}
+                                  <span className={`flex-1 min-w-0 text-[11px] font-medium truncate ${
+                                    isActive
+                                      ? 'text-foreground'
+                                      : isCompleted
+                                        ? 'text-foreground'
+                                        : 'text-muted-foreground'
+                                  }`}>
+                                    {step.label}
+                                  </span>
                                 </button>
                               )
                             })}
