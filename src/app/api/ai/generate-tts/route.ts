@@ -4,11 +4,9 @@ import { db } from '@/lib/db'
 import { requireAuth } from '@/lib/auth-helpers'
 import { getActiveProviderForUser } from '@/lib/ai-config'
 import { recordGenerationCost, calcTtsCredits } from '@/lib/cost-tracker'
-import { saveDataUrl, isDataUrl } from '@/lib/file-storage'
 
 // POST /api/ai/generate-tts - Generate TTS audio for a storyboard shot (multi-provider)
 // Now looks up the character's voiceId and voiceStyle from the database
-// v0.7: Saves audio to file storage instead of base64 data URLs in DB
 export async function POST(request: NextRequest) {
   const startTime = Date.now()
   let providerName = ''
@@ -91,7 +89,7 @@ export async function POST(request: NextRequest) {
         const character = await db.character.findFirst({
           where: {
             dramaId: episode.dramaId,
-            name: { equals: storyboard.dialogueChar },
+            name: { equals: storyboard.dialogueChar, mode: 'insensitive' },
           },
         })
 
@@ -110,30 +108,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Mark storyboard as processing
-    await db.storyboard.update({
+    // Use multi-provider aiClient with voice instructions
+    await aiClient.generateTts(storyboardId, ttsText, resolvedVoiceId, resolvedVoiceStyle)
+
+    // Fetch updated storyboard
+    const updatedStoryboard = await db.storyboard.findUnique({
       where: { id: storyboardId },
-      data: { status: 'processing' },
-    })
-
-    // Generate TTS — aiClient now returns the audio data URL
-    const audioDataUrl = await aiClient.generateTts(storyboardId, ttsText, resolvedVoiceId, resolvedVoiceStyle)
-
-    // Save audio to file storage instead of storing base64 in DB
-    let audioUrl = audioDataUrl
-    if (isDataUrl(audioDataUrl)) {
-      const saveResult = await saveDataUrl(audioDataUrl, {
-        category: 'audio',
-        dramaId,
-        filename: `tts_${storyboardId}_${Date.now()}`,
-      })
-      audioUrl = saveResult.url
-    }
-
-    // Update storyboard with file URL
-    const updatedStoryboard = await db.storyboard.update({
-      where: { id: storyboardId },
-      data: { ttsAudioUrl: audioUrl, status: 'completed' },
     })
 
     // Record cost for TTS generation

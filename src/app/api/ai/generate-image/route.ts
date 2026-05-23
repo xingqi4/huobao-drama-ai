@@ -9,7 +9,6 @@ import {
   collectSceneReferences,
 } from '@/lib/reference-collector'
 import { recordGenerationCost, calcImageCredits } from '@/lib/cost-tracker'
-import { saveMediaFile } from '@/lib/file-storage'
 
 // POST /api/ai/generate-image - AI Generate Image (multi-provider)
 // Supports reference image injection for character/scene consistency
@@ -106,9 +105,9 @@ export async function POST(request: NextRequest) {
       referenceImages = await collectSceneReferences(sceneId)
     }
 
-    // Filter out invalid/empty URLs (accept data:, http, and file storage paths)
+    // Filter out invalid/empty URLs
     referenceImages = referenceImages.filter(
-      (url) => url && url.trim() && (url.startsWith('data:') || url.startsWith('http') || url.startsWith('/api/files/'))
+      (url) => url && url.trim() && (url.startsWith('data:') || url.startsWith('http'))
     )
 
     // Generate image using multi-provider aiClient
@@ -176,14 +175,8 @@ export async function POST(request: NextRequest) {
       throw error
     }
 
-    // Save image to file storage instead of base64 data URL
-    const saveResult = await saveMediaFile(base64Image, {
-      mimeType: 'image/png',
-      category: characterId ? 'characters' : sceneId ? 'scenes' : 'storyboards',
-      dramaId,
-      filename: `img_${Date.now()}`,
-    })
-    const imageUrl = saveResult.url
+    // Convert base64 to data URL
+    const imageUrl = `data:image/png;base64,${base64Image}`
 
     // Record cost for successful sync generation
     if (dramaId) {

@@ -22,7 +22,6 @@ model User {
 
   dramas Drama[]
   userProviders UserProvider[]
-  assets Asset[]
 }
 
 // ============ Drama Project ============
@@ -41,14 +40,11 @@ model Drama {
   updatedAt           DateTime @updatedAt
 
   user      User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  episodes         Episode[]
-  characters       Character[]
-  scenes           Scene[]
-  props            Prop[]
-  generationCosts  GenerationCost[]
-  imageGenerations ImageGeneration[]
-  videoGenerations VideoGeneration[]
-  videoMerges      VideoMerge[]
+  episodes   Episode[]
+  characters Character[]
+  scenes     Scene[]
+  props      Prop[]
+  generationCosts GenerationCost[]
 }
 
 // ============ Episode ============
@@ -92,11 +88,8 @@ model Character {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  assetId     String?               // Reference to Asset if derived from library
-
   drama       Drama                @relation(fields: [dramaId], references: [id], onDelete: Cascade)
   appearances CharacterAppearance[]
-  asset       Asset?               @relation(fields: [assetId], references: [id], onDelete: SetNull)
 }
 
 // ============ Scene ============
@@ -111,11 +104,8 @@ model Scene {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  assetId String?                 // Reference to Asset if derived from library
-
   drama  Drama       @relation(fields: [dramaId], references: [id], onDelete: Cascade)
   images SceneImage[]
-  asset  Asset?      @relation(fields: [assetId], references: [id], onDelete: SetNull)
 }
 
 // ============ Storyboard (Shot) ============
@@ -207,8 +197,6 @@ model ImageGeneration {
   costCredits     Float    @default(0)  // Normalized cost credits (1 credit ≈ 1 standard image)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-
-  drama Drama? @relation(fields: [dramaId], references: [id], onDelete: SetNull)
 }
 
 // ============ AI Provider Configuration ============
@@ -282,8 +270,6 @@ model VideoGeneration {
   costCredits     Float    @default(0)  // Normalized cost credits (1 credit ≈ 5s standard video)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-
-  drama           Drama?   @relation(fields: [dramaId], references: [id], onDelete: SetNull)
 }
 
 // ============ Prop (道具) ============
@@ -298,10 +284,7 @@ model Prop {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  assetId String?                     // Reference to Asset if derived from library
-
   drama Drama @relation(fields: [dramaId], references: [id], onDelete: Cascade)
-  asset Asset? @relation(fields: [assetId], references: [id], onDelete: SetNull)
 
   @@unique([dramaId, name])
 }
@@ -320,31 +303,7 @@ model GenerationCost {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  drama       Drama    @relation(fields: [dramaId], references: [id], onDelete: Cascade)
-}
-
-// ============ Global Asset Library ============
-model Asset {
-  id          String   @id @default(cuid())
-  name        String
-  category    String   // "character" | "scene" | "prop"
-  subcategory String?  // Character.role / Prop.category / Scene.timeOfDay
-  tags        String   @default("[]")  // JSON array of tags
-  thumbnail   String?  // Preview image URL
-  userId      String?
-  isPublic    Boolean  @default(true)
-  usageCount  Int      @default(0)
-  description String   @default("")
-  imagePrompt String?
-  imageUrls   String   @default("[]")  // JSON array of image URLs
-  data        String   @default("{}")  // Category-specific fields as JSON
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  user       User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
-  characters Character[]
-  scenes     Scene[]
-  props      Prop[]
+  drama       Drama    @relation(fields: [dramaId], references: [id])
 }
 
 // ============ Video Merge Tracking ============
@@ -358,6 +317,4 @@ model VideoMerge {
   errorMsg    String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-
-  drama Drama? @relation(fields: [dramaId], references: [id], onDelete: SetNull)
 }

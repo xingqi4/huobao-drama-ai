@@ -1,18 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getActiveProvider } from '@/lib/ai-config'
 import { requireAuth } from '@/lib/auth-helpers'
-import { saveMediaFile } from '@/lib/file-storage'
 
 // POST /api/ai/poll-status - Check the status of an async AI generation task
 // Used by the client to poll for results when the API returns { status: 'processing', taskId }
-// v0.7: Saves polled image data to file storage instead of returning base64
 export async function POST(request: NextRequest) {
   try {
     const auth = await requireAuth()
     if (auth.error) return auth.error
 
     const body = await request.json()
-    const { category, taskId, dramaId } = body
+    const { category, taskId } = body
 
     if (!category || !taskId) {
       return NextResponse.json({ error: 'Missing category or taskId' }, { status: 400 })
@@ -37,26 +35,12 @@ export async function POST(request: NextRequest) {
 
       if (pollParsed.status === 'completed') {
         if (pollParsed.imageUrl) {
-          // Download image from provider URL and save to file storage
           const imgRes = await fetch(pollParsed.imageUrl)
           const buffer = Buffer.from(await imgRes.arrayBuffer())
-          const saveResult = await saveMediaFile(buffer, {
-            mimeType: 'image/png',
-            category: 'storyboards',
-            dramaId,
-            filename: `async_img_${Date.now()}`,
-          })
-          return NextResponse.json({ status: 'completed', imageUrl: saveResult.url })
+          return NextResponse.json({ status: 'completed', imageBase64: buffer.toString('base64') })
         }
         if (pollParsed.imageBase64) {
-          // Save base64 to file storage
-          const saveResult = await saveMediaFile(pollParsed.imageBase64, {
-            mimeType: 'image/png',
-            category: 'storyboards',
-            dramaId,
-            filename: `async_img_${Date.now()}`,
-          })
-          return NextResponse.json({ status: 'completed', imageUrl: saveResult.url })
+          return NextResponse.json({ status: 'completed', imageBase64: pollParsed.imageBase64 })
         }
         return NextResponse.json({ status: 'completed', error: 'No image data' })
       }

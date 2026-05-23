@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { aiClient } from '@/lib/ai-config'
 import { requireAuth } from '@/lib/auth-helpers'
-import { saveMediaFile } from '@/lib/file-storage'
 
 // POST /api/ai/generate-scene-image - AI Generate Scene Image
 // Generates an image from a scene's prompt and saves it to the scene record
@@ -76,14 +75,8 @@ export async function POST(request: NextRequest) {
       throw error
     }
 
-    // Save image to file storage instead of base64 data URL
-    const saveResult = await saveMediaFile(base64Image, {
-      mimeType: 'image/png',
-      category: 'scenes',
-      dramaId: scene.dramaId,
-      filename: `scene_${sceneId}_${Date.now()}`,
-    })
-    const imageUrl = saveResult.url
+    // Convert base64 to data URL
+    const imageUrl = `data:image/png;base64,${base64Image}`
 
     // Save imageUrl to scene record
     const updatedScene = await db.scene.update({

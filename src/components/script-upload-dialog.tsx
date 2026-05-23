@@ -177,6 +177,7 @@ export function ScriptUploadDialog({
 
   const handleClose = (open: boolean) => {
     if (!open) {
+      hasAutoParsed.current = false
       reset()
     }
     onOpenChange(open)
@@ -372,7 +373,14 @@ export function ScriptUploadDialog({
     }
   }, [uploadingText, toast])
 
-  // AI parse is user-triggered only (no auto-trigger)
+  // ── Auto-trigger AI parse when entering step 1 ──
+  const hasAutoParsed = useRef(false)
+  useEffect(() => {
+    if (step === 1 && !parsing && !hasAutoParsed.current && uploadingText.trim()) {
+      hasAutoParsed.current = true
+      handleAiParse()
+    }
+  }, [step, parsing, uploadingText, handleAiParse])
 
   // ── Create project ──
   const handleCreate = useCallback(async () => {
@@ -386,7 +394,7 @@ export function ScriptUploadDialog({
         episodes: episodes.filter(ep => ep.rawContent.trim()),
         characters: characters.length > 0 ? characters : undefined,
         scenes: scenes.length > 0 ? scenes : undefined,
-        props: props.length > 0 ? props : undefined,
+        props: parsedData?.props?.length > 0 ? parsedData.props : undefined,
         autoStartPipeline: autoPipeline,
       })
       toast({ title: '项目创建成功', description: `已创建「${title}」项目，包含${episodes.length}集内容` })
@@ -397,7 +405,7 @@ export function ScriptUploadDialog({
     } finally {
       setCreating(false)
     }
-  }, [title, genre, style, episodes, characters, scenes, props, autoPipeline, toast, handleClose, onSuccess])
+  }, [title, genre, style, episodes, characters, scenes, autoPipeline, toast, handleClose, onSuccess])
 
   // ── Drop handlers ──
   const handleDragOver = (e: React.DragEvent) => {
