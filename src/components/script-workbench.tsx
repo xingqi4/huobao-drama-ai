@@ -90,6 +90,13 @@ export function ScriptWorkbench() {
   const [episodeRangeStart, setEpisodeRangeStart] = useState(1)
   const [episodeRangeEnd, setEpisodeRangeEnd] = useState(10)
 
+  // Auto-sync episode range when chapters load
+  useEffect(() => {
+    if (chapters.length > 0 && episodeRangeEnd === 10) {
+      setEpisodeRangeEnd(chapters.length)
+    }
+  }, [chapters.length, episodeRangeEnd])
+
   // Upload state
   const [uploading, setUploading] = useState(false)
   const [parsing, setParsing] = useState(false)
@@ -471,7 +478,7 @@ export function ScriptWorkbench() {
                         <span className="size-4 rounded flex items-center justify-center text-[10px] font-mono bg-muted/60 shrink-0">
                           {idx + 1}
                         </span>
-                        <span className="truncate flex-1">{ch.title}</span>
+                        <span className="truncate flex-1">{ch.title || `第${idx + 1}章`}</span>
                         {novel?.parseStatus === 'parsed' && (
                           <Check className="size-3 text-emerald-500 shrink-0" />
                         )}
@@ -673,7 +680,7 @@ export function ScriptWorkbench() {
                         <span className="size-4 rounded flex items-center justify-center text-[10px] font-mono bg-muted/60 shrink-0">
                           {idx + 1}
                         </span>
-                        <span className="truncate flex-1">{ch.title}</span>
+                        <span className="truncate flex-1">{ch.title || `第${idx + 1}章`}</span>
                         {novel?.parseStatus === 'parsed' && (
                           <Check className="size-3 text-emerald-500 shrink-0" />
                         )}
@@ -790,14 +797,49 @@ export function ScriptWorkbench() {
               </TabsList>
             </div>
 
-            {/* Tab: 故事骨架 */}
+            {/* Tab: 章节预览 / 故事骨架 */}
             <TabsContent
               value="skeleton"
               className="flex-1 overflow-hidden m-0"
             >
               <ScrollArea className="h-full">
                 <div className="p-4 max-w-4xl mx-auto">
-                  {parsedContent.skeleton ? (
+                  {/* 章节内容预览（选中章节时优先显示） */}
+                  {selectedChapterIdx !== null && chapters[selectedChapterIdx] ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <BookOpen className="size-4 text-amber-500" />
+                          <span className="text-sm font-medium">
+                            第{selectedChapterIdx + 1}章 · {chapters[selectedChapterIdx].title || `第${selectedChapterIdx + 1}章`}
+                          </span>
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] px-1.5 py-0 text-blue-600 border-blue-300"
+                          >
+                            章节预览
+                          </Badge>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs gap-1"
+                          onClick={() => setSelectedChapterIdx(null)}
+                        >
+                          <X className="size-3" />
+                          关闭预览
+                        </Button>
+                      </div>
+                      <div className="prose prose-sm dark:prose-invert max-w-none">
+                        <pre className="whitespace-pre-wrap text-sm leading-relaxed bg-muted/30 rounded-lg p-4 border border-border/50 max-h-[calc(100vh-280px)] overflow-y-auto">
+                          {chapters[selectedChapterIdx].content || '（本章内容为空）'}
+                        </pre>
+                      </div>
+                      <div className="text-[10px] text-muted-foreground text-right">
+                        字数：{chapters[selectedChapterIdx].content?.length || 0}
+                      </div>
+                    </div>
+                  ) : parsedContent.skeleton ? (
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
