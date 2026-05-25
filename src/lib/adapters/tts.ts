@@ -271,6 +271,110 @@ export class AliTTSAdapter implements TTSProviderAdapter {
 }
 
 // ============================================================================
+// MiMo TTS Adapter (chat/completions-based TTS)
+// MiMo TTS models use the chat completions interface, NOT /audio/speech.
+// They require an assistant role message in the conversation.
+// ============================================================================
+
+export class MiMoTTSAdapter implements TTSProviderAdapter {
+  buildGenerateRequest(
+    config: { baseUrl: string; apiKey: string; model: string },
+    params: { text: string; voiceId?: string; speed?: number }
+  ): ProviderRequest {
+    const model = config.model || 'mimo-v2.5-tts'
+    const speed = params.speed ?? 1
+
+    // MiMo TTS requires messages with an assistant role
+    // The assistant message serves as a speech style / voice prompt
+    const assistantContent = params.voiceId
+      ? `[voice: ${params.voiceId}]`
+      : ''
+
+    return {
+      url: joinProviderUrl(config.baseUrl, '/v1', '/chat/completions'),
+      method: 'POST',
+      headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
+      body: {
+        model,
+        messages: [
+          { role: 'user', content: params.text },
+          { role: 'assistant', content: assistantContent },
+        ],
+        stream: false,
+        // Pass speed as a custom parameter if the API supports it
+        ...(speed !== 1 ? { speed } : {}),
+      },
+    }
+  }
+
+  parseResponse(result: unknown): {
+    audioBase64?: string
+    audioHex?: string
+    format: string
+    sampleRate?: number
+  } {
+    const resp = result as Record<string, unknown>
+
+    // Chat completions response format: { choices: [{ message: { content: "..." } }] }
+    const choices = resp.choices as Array<Record<string, unknown>> | undefined
+    if (choices && choices.length > 0) {
+      const message = choices[0].message as Record<string, unknown> | undefined
+      if (message) {
+        const content = message.content as string | undefined
+        if (content) {
+          // Content might be:
+          // 1. Base64-encoded audio data
+          // 2. A URL to the audio file
+          // 3. Text content (if model returned text instead of audio)
+          if (content.startsWith('http')) {
+            // URL — caller needs to fetch it separately
+            // Return as a special marker; the ai-config layer will handle it
+            return { audioBase64: content, format: 'mp3' }
+          }
+          // Try to detect if it's base64 audio data
+          // Base64 audio typically starts with specific patterns (e.g., //uQx for MP3, UklGR for WAV)
+          if (/^[A-Za-z0-9+/=]+$/.test(content) && content.length > 100) {
+            return { audioBase64: content, format: 'mp3' }
+          }
+          // Otherwise it might be plain text — return empty audio
+          return { format: 'mp3' }
+        }
+
+        // Check for audio in other message fields (some models put audio data separately)
+        const audio = message.audio as Record<string, unknown> | string | undefined
+        if (audio && typeof audio === 'string') {
+          return { audioBase64: audio, format: 'mp3' }
+        }
+        if (audio && typeof audio === 'object') {
+          const audioObj = audio as Record<string, unknown>
+          const audioData = audioObj.data as string | undefined
+          const audioFormat = (audioObj.format as string) || 'mp3'
+          if (audioData) {
+            return { audioBase64: audioData, format: audioFormat }
+          }
+        }
+      }
+    }
+
+    // Fallback: check for direct audio data fields
+    const audioField = resp.audio as string | undefined
+    if (audioField) {
+      return { audioBase64: audioField, format: 'mp3' }
+    }
+
+    const data = resp.data as Record<string, unknown> | undefined
+    if (data) {
+      const audioData = data.audio as string | undefined
+      if (audioData) {
+        return { audioBase64: audioData, format: (data.format as string) || 'mp3' }
+      }
+    }
+
+    return { format: 'mp3' }
+  }
+}
+
+// ============================================================================
 // Adapter Registry
 // ============================================================================
 
@@ -280,7 +384,7 @@ export const ttsAdapters: Record<string, TTSProviderAdapter> = {
   openai: new OpenAITTSAdapter(),
   fish_audio: new OpenAITTSAdapter(), // OpenAI-compatible
   ali: new AliTTSAdapter(),
-  mimo: new OpenAITTSAdapter(),       // OpenAI-compatible TTS
+  mimo: new MiMoTTSAdapter(),         // chat/completions-based TTS
 }
 
 export function getTTSAdapter(provider: string): TTSProviderAdapter {
