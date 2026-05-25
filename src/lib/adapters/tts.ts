@@ -282,27 +282,39 @@ export class MiMoTTSAdapter implements TTSProviderAdapter {
     params: { text: string; voiceId?: string; speed?: number }
   ): ProviderRequest {
     const model = config.model || 'mimo-v2.5-tts'
-    const speed = params.speed ?? 1
+    const voiceId = params.voiceId || 'mimo_default'
 
-    // MiMo TTS requires messages with an assistant role
-    // The assistant message serves as a speech style / voice prompt
-    const assistantContent = params.voiceId
-      ? `[voice: ${params.voiceId}]`
-      : ''
+    // MiMo TTS uses chat/completions interface with a special convention:
+    // - assistant message content = the text to be synthesized (REQUIRED)
+    // - user message content = style/direction instructions (optional)
+    // - audio object with format + voice is REQUIRED
+    // - Authentication uses `api-key` header (not Authorization: Bearer)
+    //
+    // Reference: https://platform.xiaomimimo.com/static/docs/usage-guide/speech-synthesis-v2.5.md
+
+    const messages: Array<{ role: string; content: string }> = []
+
+    // Add user message for style instructions (optional, improves quality)
+    messages.push({ role: 'user', content: '请用自然、清晰的语速朗读。' })
+
+    // The assistant message contains the actual text to synthesize — this is what gets spoken
+    messages.push({ role: 'assistant', content: params.text })
 
     return {
       url: joinProviderUrl(config.baseUrl, '/v1', '/chat/completions'),
       method: 'POST',
-      headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
+      headers: {
+        'api-key': config.apiKey,  // MiMo uses api-key header, NOT Authorization: Bearer
+        'Content-Type': 'application/json',
+      },
       body: {
         model,
-        messages: [
-          { role: 'user', content: params.text },
-          { role: 'assistant', content: assistantContent },
-        ],
+        messages,
+        audio: {
+          format: 'wav',
+          voice: voiceId,
+        },
         stream: false,
-        // Pass speed as a custom parameter if the API supports it
-        ...(speed !== 1 ? { speed } : {}),
       },
     }
   }
@@ -315,62 +327,45 @@ export class MiMoTTSAdapter implements TTSProviderAdapter {
   } {
     const resp = result as Record<string, unknown>
 
-    // Chat completions response format: { choices: [{ message: { content: "..." } }] }
+    // MiMo TTS response format (chat completions style):
+    // { choices: [{ message: { role: "assistant", audio: { data: "<base64>" } } }] }
     const choices = resp.choices as Array<Record<string, unknown>> | undefined
     if (choices && choices.length > 0) {
       const message = choices[0].message as Record<string, unknown> | undefined
       if (message) {
-        const content = message.content as string | undefined
-        if (content) {
-          // Content might be:
-          // 1. Base64-encoded audio data
-          // 2. A URL to the audio file
-          // 3. Text content (if model returned text instead of audio)
-          if (content.startsWith('http')) {
-            // URL — caller needs to fetch it separately
-            // Return as a special marker; the ai-config layer will handle it
-            return { audioBase64: content, format: 'mp3' }
+        // Primary path: audio.data field (MiMo official format)
+        const audio = message.audio as Record<string, unknown> | string | undefined
+        if (audio && typeof audio === 'object') {
+          const audioData = audio.data as string | undefined
+          if (audioData) {
+            return { audioBase64: audioData, format: 'wav', sampleRate: 24000 }
           }
-          // Try to detect if it's base64 audio data
-          // Base64 audio typically starts with specific patterns (e.g., //uQx for MP3, UklGR for WAV)
-          if (/^[A-Za-z0-9+/=]+$/.test(content) && content.length > 100) {
-            return { audioBase64: content, format: 'mp3' }
-          }
-          // Otherwise it might be plain text — return empty audio
-          return { format: 'mp3' }
+        }
+        if (audio && typeof audio === 'string') {
+          return { audioBase64: audio, format: 'wav', sampleRate: 24000 }
         }
 
-        // Check for audio in other message fields (some models put audio data separately)
-        const audio = message.audio as Record<string, unknown> | string | undefined
-        if (audio && typeof audio === 'string') {
-          return { audioBase64: audio, format: 'mp3' }
-        }
-        if (audio && typeof audio === 'object') {
-          const audioObj = audio as Record<string, unknown>
-          const audioData = audioObj.data as string | undefined
-          const audioFormat = (audioObj.format as string) || 'mp3'
-          if (audioData) {
-            return { audioBase64: audioData, format: audioFormat }
-          }
+        // Fallback: check content field (some compatible APIs might return base64 in content)
+        const content = message.content as string | undefined
+        if (content && /^[A-Za-z0-9+/=]+$/.test(content) && content.length > 100) {
+          return { audioBase64: content, format: 'wav', sampleRate: 24000 }
         }
       }
     }
 
     // Fallback: check for direct audio data fields
-    const audioField = resp.audio as string | undefined
-    if (audioField) {
-      return { audioBase64: audioField, format: 'mp3' }
-    }
-
-    const data = resp.data as Record<string, unknown> | undefined
-    if (data) {
-      const audioData = data.audio as string | undefined
+    const audioField = resp.audio as Record<string, unknown> | string | undefined
+    if (audioField && typeof audioField === 'object') {
+      const audioData = (audioField as Record<string, unknown>).data as string | undefined
       if (audioData) {
-        return { audioBase64: audioData, format: (data.format as string) || 'mp3' }
+        return { audioBase64: audioData, format: 'wav', sampleRate: 24000 }
       }
     }
+    if (typeof audioField === 'string') {
+      return { audioBase64: audioField, format: 'wav', sampleRate: 24000 }
+    }
 
-    return { format: 'mp3' }
+    return { format: 'wav' }
   }
 }
 
