@@ -271,105 +271,6 @@ export class AliTTSAdapter implements TTSProviderAdapter {
 }
 
 // ============================================================================
-// MiMo TTS Adapter (chat/completions-based TTS)
-// MiMo TTS models use the chat completions interface, NOT /audio/speech.
-// They require an assistant role message in the conversation.
-// ============================================================================
-
-export class MiMoTTSAdapter implements TTSProviderAdapter {
-  buildGenerateRequest(
-    config: { baseUrl: string; apiKey: string; model: string },
-    params: { text: string; voiceId?: string; speed?: number }
-  ): ProviderRequest {
-    const model = config.model || 'mimo-v2.5-tts'
-    const voiceId = params.voiceId || 'mimo_default'
-
-    // MiMo TTS uses chat/completions interface with a special convention:
-    // - assistant message content = the text to be synthesized (REQUIRED)
-    // - user message content = style/direction instructions (optional)
-    // - audio object with format + voice is REQUIRED
-    // - Authentication uses `api-key` header (not Authorization: Bearer)
-    //
-    // Reference: https://platform.xiaomimimo.com/static/docs/usage-guide/speech-synthesis-v2.5.md
-
-    const messages: Array<{ role: string; content: string }> = []
-
-    // Add user message for style instructions (optional, improves quality)
-    messages.push({ role: 'user', content: '请用自然、清晰的语速朗读。' })
-
-    // The assistant message contains the actual text to synthesize — this is what gets spoken
-    messages.push({ role: 'assistant', content: params.text })
-
-    return {
-      url: joinProviderUrl(config.baseUrl, '/v1', '/chat/completions'),
-      method: 'POST',
-      headers: {
-        'api-key': config.apiKey,  // MiMo uses api-key header, NOT Authorization: Bearer
-        'Content-Type': 'application/json',
-      },
-      body: {
-        model,
-        messages,
-        audio: {
-          format: 'wav',
-          voice: voiceId,
-        },
-        stream: false,
-      },
-    }
-  }
-
-  parseResponse(result: unknown): {
-    audioBase64?: string
-    audioHex?: string
-    format: string
-    sampleRate?: number
-  } {
-    const resp = result as Record<string, unknown>
-
-    // MiMo TTS response format (chat completions style):
-    // { choices: [{ message: { role: "assistant", audio: { data: "<base64>" } } }] }
-    const choices = resp.choices as Array<Record<string, unknown>> | undefined
-    if (choices && choices.length > 0) {
-      const message = choices[0].message as Record<string, unknown> | undefined
-      if (message) {
-        // Primary path: audio.data field (MiMo official format)
-        const audio = message.audio as Record<string, unknown> | string | undefined
-        if (audio && typeof audio === 'object') {
-          const audioData = audio.data as string | undefined
-          if (audioData) {
-            return { audioBase64: audioData, format: 'wav', sampleRate: 24000 }
-          }
-        }
-        if (audio && typeof audio === 'string') {
-          return { audioBase64: audio, format: 'wav', sampleRate: 24000 }
-        }
-
-        // Fallback: check content field (some compatible APIs might return base64 in content)
-        const content = message.content as string | undefined
-        if (content && /^[A-Za-z0-9+/=]+$/.test(content) && content.length > 100) {
-          return { audioBase64: content, format: 'wav', sampleRate: 24000 }
-        }
-      }
-    }
-
-    // Fallback: check for direct audio data fields
-    const audioField = resp.audio as Record<string, unknown> | string | undefined
-    if (audioField && typeof audioField === 'object') {
-      const audioData = (audioField as Record<string, unknown>).data as string | undefined
-      if (audioData) {
-        return { audioBase64: audioData, format: 'wav', sampleRate: 24000 }
-      }
-    }
-    if (typeof audioField === 'string') {
-      return { audioBase64: audioField, format: 'wav', sampleRate: 24000 }
-    }
-
-    return { format: 'wav' }
-  }
-}
-
-// ============================================================================
 // Adapter Registry
 // ============================================================================
 
@@ -379,7 +280,6 @@ export const ttsAdapters: Record<string, TTSProviderAdapter> = {
   openai: new OpenAITTSAdapter(),
   fish_audio: new OpenAITTSAdapter(), // OpenAI-compatible
   ali: new AliTTSAdapter(),
-  mimo: new MiMoTTSAdapter(),         // chat/completions-based TTS
 }
 
 export function getTTSAdapter(provider: string): TTSProviderAdapter {
