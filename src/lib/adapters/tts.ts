@@ -280,6 +280,7 @@ export const ttsAdapters: Record<string, TTSProviderAdapter> = {
   openai: new OpenAITTSAdapter(),
   fish_audio: new OpenAITTSAdapter(), // OpenAI-compatible
   ali: new AliTTSAdapter(),
+  mimo: new OpenAITTSAdapter(),       // OpenAI-compatible TTS
 }
 
 export function getTTSAdapter(provider: string): TTSProviderAdapter {
