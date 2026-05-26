@@ -53,13 +53,21 @@ export async function parseNovelFile(
 // splitChapters — Split novel text into chapters
 // ============================================================
 
-// Chinese chapter patterns (ordered by specificity)
+// Comprehensive Chinese/English chapter patterns (ordered by specificity)
+// Each pattern captures the chapter title line
 const CHAPTER_PATTERNS = [
-  /^[\s]*第[零一二三四五六七八九十百千万\d]+[章回节卷卷][\s\S]*$/gm,  // 第X章/第X回/第X节/第X卷
-  /^[\s]*Chapter\s+\d+[\s\S]*$/gim,                                     // Chapter X (English)
-  /^[\s]*CHAPTER\s+\d+[\s\S]*$/gm,                                      // CHAPTER X
-  /^[\s]*卷[零一二三四五六七八九十百千万\d]+[\s\S]*$/gm,                  // 卷X
-  /^[\s]*\d+[\.\、][\s\S]*$/gm,                                         // 1. / 1、 numbered
+  // 第X章/第X回/第X节/第X卷 + optional title text
+  /^[\s]*(第[零一二三四五六七八九十百千万〇０-９\d]+[章回节卷集部篇][^\n]*)/gm,
+  // 卷X / 卷之X + optional title
+  /^[\s]*(卷[零一二三四五六七八九十百千万〇\d]+[^\n]*)/gm,
+  // Chapter X (English)
+  /^[\s]*(Chapter\s+\d+[^\n]*)/gim,
+  // CHAPTER X
+  /^[\s]*(CHAPTER\s+\d+[^\n]*)/gm,
+  // 纯数字编号行 如 "1", "2", "3" 或 "1." "1、" 后跟标题文字（需独占一行）
+  /^[\s]*(\d{1,4})[\s]*[\.、．]\s*[^\n]+/gm,
+  // 【标题】格式
+  /^[\s]*【[^】]+】/gm,
 ]
 
 export function splitChapters(text: string): Chapter[] {
@@ -75,7 +83,9 @@ export function splitChapters(text: string): Chapter[] {
       for (let i = 0; i < matches.length; i++) {
         const startIdx = matches[i].index!
         const endIdx = i + 1 < matches.length ? matches[i + 1].index! : text.length
-        const title = matches[i][0].trim()
+        // Use the captured title (first capture group or full match)
+        const rawTitle = matches[i][1] || matches[i][0]
+        const title = rawTitle.trim()
         const content = text.slice(startIdx + matches[i][0].length, endIdx).trim()
         chapters.push({ index: i, title, content })
       }
@@ -83,11 +93,11 @@ export function splitChapters(text: string): Chapter[] {
     }
   }
 
-  // No chapter pattern found — split by ~5000 char chunks
+  // No chapter pattern found — split by paragraph boundaries
+  // Use first meaningful line of each chunk as title
   const CHUNK_SIZE = 5000
   const chapters: Chapter[] = []
   let idx = 0
-  let chunkNum = 1
 
   while (idx < text.length) {
     let endIdx = Math.min(idx + CHUNK_SIZE, text.length)
@@ -100,14 +110,32 @@ export function splitChapters(text: string): Chapter[] {
       }
     }
 
-    const content = text.slice(idx, endIdx).trim()
-    if (content.length > 0) {
+    const chunk = text.slice(idx, endIdx).trim()
+    if (chunk.length > 0) {
+      // Extract first line as title, use rest as content
+      const firstNewline = chunk.indexOf('\n')
+      let title: string
+      let content: string
+
+      if (firstNewline > 0 && firstNewline < 80) {
+        // First line is short enough to be a title
+        title = chunk.slice(0, firstNewline).trim()
+        content = chunk.slice(firstNewline + 1).trim()
+      } else if (firstNewline < 0 && chunk.length < 80) {
+        // Entire chunk is short, use as both title and content
+        title = chunk
+        content = chunk
+      } else {
+        // First line too long or doesn't exist, use first N chars
+        title = chunk.slice(0, 30).trim() + '...'
+        content = chunk
+      }
+
       chapters.push({
         index: chapters.length,
-        title: `片段 ${chunkNum}`,
+        title,
         content,
       })
-      chunkNum++
     }
     idx = endIdx
   }
