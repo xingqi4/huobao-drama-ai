@@ -56,10 +56,13 @@ export async function parseNovelFile(
 // Comprehensive Chinese/English chapter patterns (ordered by specificity)
 // Each pattern captures the chapter title line
 const CHAPTER_PATTERNS = [
-  // 第X章/第X回/第X节/第X卷 + optional title text
+  // 第X章/第X回/第X节/第X卷/第X集/第X部/第X篇 + optional title text
+  // Supports: 第一章, 第1章, 第一回 大观园, 第23章 暗流, 第二十三章, 第零一章
   /^[\s]*(第[零一二三四五六七八九十百千万〇０-９\d]+[章回节卷集部篇][^\n]*)/gm,
-  // 卷X / 卷之X + optional title
-  /^[\s]*(卷[零一二三四五六七八九十百千万〇\d]+[^\n]*)/gm,
+  // 卷X / 卷之X + optional title (e.g. 卷一 风起, 卷之三)
+  /^[\s]*(卷[之]?[零一二三四五六七八九十百千万〇\d]+[^\n]*)/gm,
+  // 序章/终章/番外/尾声/楔子/引子 + optional title
+  /^[\s]*([序终][章卷]|[番外][篇章]?|尾声|楔子|引子)[^\n]*/gm,
   // Chapter X (English)
   /^[\s]*(Chapter\s+\d+[^\n]*)/gim,
   // CHAPTER X

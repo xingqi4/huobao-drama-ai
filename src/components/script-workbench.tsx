@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useAppStore } from '@/lib/store'
 import { api, type Novel } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
@@ -104,6 +104,17 @@ export function ScriptWorkbench() {
   const [expandedEpisode, setExpandedEpisode] = useState<string | null>(null)
   const [episodeScripts, setEpisodeScripts] = useState<Record<string, string>>({})
 
+  // ── Refs for stable callback references ──
+  // We use refs so that useEffect deps don't cause cascading re-renders
+  const toastRef = useRef(toast)
+  useEffect(() => { toastRef.current = toast }, [toast])
+
+  const selectedDramaIdRef = useRef(selectedDramaId)
+  useEffect(() => { selectedDramaIdRef.current = selectedDramaId }, [selectedDramaId])
+
+  const novelRef = useRef(novel)
+  useEffect(() => { novelRef.current = novel }, [novel])
+
   const isGenerating = generatingSkeleton || generatingStrategy || generatingScripts
 
   // ── Computed ──
@@ -112,11 +123,12 @@ export function ScriptWorkbench() {
   const totalEpisodes = episodes.length || 0
   const progressPercent = totalEpisodes > 0 ? Math.round((completedEpisodes / totalEpisodes) * 100) : 0
 
-  // ── Data Loading ──
+  // ── Data Loading (stable references via refs) ──
   const loadNovelData = useCallback(async () => {
-    if (!selectedDramaId) return
+    const dramaId = selectedDramaIdRef.current
+    if (!dramaId) return
     try {
-      const novelRes = await fetch(`/api/novels?dramaId=${selectedDramaId}`)
+      const novelRes = await fetch(`/api/novels?dramaId=${dramaId}`)
       if (novelRes.ok) {
         const novelData = await novelRes.json()
         if (novelData) {
@@ -131,20 +143,21 @@ export function ScriptWorkbench() {
         }
       }
     } catch { /* ignore */ }
-  }, [selectedDramaId])
+  }, []) // No deps — uses refs internally
 
   const loadScriptStatus = useCallback(async () => {
-    if (!selectedDramaId) return
+    const dramaId = selectedDramaIdRef.current
+    if (!dramaId) return
     try {
-      const status = await api.dramas.getScriptStatus(selectedDramaId)
+      const status = await api.dramas.getScriptStatus(dramaId)
       setEpisodes(status.episodes)
       if (status.episodes.length > 0) {
         setEpisodeRangeEnd(Math.max(...status.episodes.map((e) => e.episodeNumber)))
       }
     } catch { /* ignore */ }
-  }, [selectedDramaId])
+  }, []) // No deps — uses refs internally
 
-  // Initial data load
+  // Initial data load — ONLY depends on selectedDramaId (primitive, stable)
   useEffect(() => {
     if (!selectedDramaId) return
     let cancelled = false
@@ -156,25 +169,30 @@ export function ScriptWorkbench() {
     return () => { cancelled = true }
   }, [selectedDramaId, loadNovelData, loadScriptStatus])
 
-  // Parse progress polling
+  // Parse progress polling — uses refs to avoid unstable deps
   useEffect(() => {
-    if (!parsing || !novel) return
+    if (!parsing) return
+
     const interval = setInterval(async () => {
+      const currentNovel = novelRef.current
+      if (!currentNovel) return
+
       try {
-        const status = await api.novels.parseStatus(novel.id)
+        const status = await api.novels.parseStatus(currentNovel.id)
         setParseProgress({ current: status.current, total: status.total, message: status.message })
         if (status.status === 'parsed') {
           setParsing(false)
           await loadNovelData()
-          toast({ title: '小说解析完成' })
+          toastRef.current({ title: '小说解析完成' })
         } else if (status.status === 'failed') {
           setParsing(false)
-          toast({ title: '小说解析失败', variant: 'destructive' })
+          toastRef.current({ title: '小说解析失败', variant: 'destructive' })
         }
       } catch { /* ignore */ }
     }, 2000)
+
     return () => clearInterval(interval)
-  }, [parsing, novel, loadNovelData, toast])
+  }, [parsing, loadNovelData]) // Only re-create when `parsing` changes
 
   // ── Handlers ──
 
@@ -185,12 +203,12 @@ export function ScriptWorkbench() {
       const result = await api.novels.uploadForDrama(selectedDramaId, file)
       setNovel(result.novel)
       setChapters(result.chapters || [])
-      toast({ title: '小说上传成功' })
+      toastRef.current({ title: '小说上传成功' })
       setParsing(true)
       setParseProgress({ current: 0, total: 1, message: '开始解析...' })
       await api.novels.parse(result.novel.id)
     } catch (err: any) {
-      toast({ title: '上传失败', description: err.message || '请检查文件格式', variant: 'destructive' })
+      toastRef.current({ title: '上传失败', description: err.message || '请检查文件格式', variant: 'destructive' })
     } finally {
       setUploading(false)
     }
@@ -215,12 +233,12 @@ export function ScriptWorkbench() {
       if (res.ok) {
         const data = await res.json()
         setChapters(data.chapters || [])
-        toast({ title: '重新解析完成', description: `已识别 ${data.chapters?.length || 0} 个章节` })
+        toastRef.current({ title: '重新解析完成', description: `已识别 ${data.chapters?.length || 0} 个章节` })
       } else {
-        toast({ title: '重新解析失败', variant: 'destructive' })
+        toastRef.current({ title: '重新解析失败', variant: 'destructive' })
       }
     } catch (err: any) {
-      toast({ title: '重新解析失败', description: err.message, variant: 'destructive' })
+      toastRef.current({ title: '重新解析失败', description: err.message, variant: 'destructive' })
     } finally {
       setReparsing(false)
     }
@@ -235,10 +253,10 @@ export function ScriptWorkbench() {
       setParsedContent((prev) => ({ ...prev, skeleton: result.skeleton, skeletonGeneratedAt: new Date().toISOString() }))
       setSkeletonEdit(result.skeleton)
       setGenerationProgress(100)
-      toast({ title: '故事骨架生成完成' })
+      toastRef.current({ title: '故事骨架生成完成' })
       setActiveTab('skeleton')
     } catch (err: any) {
-      toast({ title: '骨架生成失败', description: err.message, variant: 'destructive' })
+      toastRef.current({ title: '骨架生成失败', description: err.message, variant: 'destructive' })
     } finally {
       setGeneratingSkeleton(false)
       setGenerationProgress(0)
@@ -255,10 +273,10 @@ export function ScriptWorkbench() {
       setParsedContent((prev) => ({ ...prev, strategy: result.strategy, strategyGeneratedAt: new Date().toISOString() }))
       setStrategyEdit(result.strategy)
       setGenerationProgress(100)
-      toast({ title: '改编策略生成完成' })
+      toastRef.current({ title: '改编策略生成完成' })
       setActiveTab('strategy')
     } catch (err: any) {
-      toast({ title: '策略生成失败', description: err.message, variant: 'destructive' })
+      toastRef.current({ title: '策略生成失败', description: err.message, variant: 'destructive' })
     } finally {
       setGeneratingStrategy(false)
       setGenerationProgress(0)
@@ -279,10 +297,10 @@ export function ScriptWorkbench() {
       })
       setGenerationProgress(100)
       await loadScriptStatus()
-      toast({ title: `剧本生成完成，成功 ${result.totalGenerated} 集` })
+      toastRef.current({ title: `剧本生成完成，成功 ${result.totalGenerated} 集` })
       setActiveTab('scripts')
     } catch (err: any) {
-      toast({ title: '剧本生成失败', description: err.message, variant: 'destructive' })
+      toastRef.current({ title: '剧本生成失败', description: err.message, variant: 'destructive' })
     } finally {
       setGeneratingScripts(false)
       setGenerationProgress(0)
@@ -371,7 +389,7 @@ export function ScriptWorkbench() {
                   <div className="p-2 space-y-0.5">
                     {chapters.map((ch, idx) => (
                       <button
-                        key={ch.index}
+                        key={`${ch.index}-${idx}`}
                         className={`w-full text-left px-2 py-1.5 rounded-md text-xs flex items-center gap-2 transition-colors ${
                           selectedChapterIdx === idx
                             ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400'
@@ -467,7 +485,7 @@ export function ScriptWorkbench() {
                   <div className="p-2 space-y-0.5">
                     {chapters.map((ch, idx) => (
                       <button
-                        key={ch.index}
+                        key={`${ch.index}-${idx}`}
                         className={`w-full text-left px-2 py-1.5 rounded-md text-xs flex items-center gap-2 transition-colors ${
                           selectedChapterIdx === idx ? 'bg-amber-500/10 text-amber-700' : 'hover:bg-muted/50 text-foreground'
                         }`}
@@ -817,13 +835,13 @@ function EmptyState({
   disabled?: boolean
 }) {
   return (
-    <div className="flex flex-col items-center justify-center py-16">
-      {icon}
-      <h3 className="text-lg font-semibold mt-4">{title}</h3>
-      <p className="text-sm text-muted-foreground mt-2 max-w-md text-center">{description}</p>
+    <div className="flex flex-col items-center justify-center py-16 text-center">
+      <div className="mb-4">{icon}</div>
+      <h3 className="text-sm font-medium mb-1">{title}</h3>
+      <p className="text-xs text-muted-foreground max-w-xs mb-4">{description}</p>
       {actionLabel && onAction && (
-        <Button className="mt-4 gap-1.5" onClick={onAction} disabled={disabled}>
-          <Play className="size-4" />
+        <Button size="sm" onClick={onAction} disabled={disabled} className="gap-1.5">
+          <Sparkles className="size-3" />
           {actionLabel}
         </Button>
       )}
@@ -832,33 +850,38 @@ function EmptyState({
 }
 
 function StatusBadge({ status }: { status: string }) {
-  switch (status) {
-    case 'completed':
-      return <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-emerald-600 border-emerald-300">已完成</Badge>
-    case 'processing':
-      return <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-amber-600 border-amber-300">生成中</Badge>
-    case 'failed':
-      return <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-red-600 border-red-300">失败</Badge>
-    default:
-      return <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">待创作</Badge>
+  const config: Record<string, { label: string; className: string }> = {
+    completed: { label: '已完成', className: 'text-emerald-600 border-emerald-300' },
+    generating: { label: '生成中', className: 'text-amber-600 border-amber-300' },
+    failed: { label: '失败', className: 'text-red-600 border-red-300' },
+    pending: { label: '待生成', className: 'text-muted-foreground border-border' },
   }
+  const c = config[status] || config.pending
+  return (
+    <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${c.className}`}>
+      {c.label}
+    </Badge>
+  )
 }
 
 function StatusDot({ status }: { status: string }) {
   const colorMap: Record<string, string> = {
     completed: 'bg-emerald-500',
-    processing: 'bg-amber-500 animate-pulse',
+    generating: 'bg-amber-500 animate-pulse',
     failed: 'bg-red-500',
     pending: 'bg-muted-foreground/40',
   }
-  return <span className={`size-2 rounded-full shrink-0 ${colorMap[status] || colorMap.pending}`} />
+  return <span className={`size-1.5 rounded-full shrink-0 ${colorMap[status] || colorMap.pending}`} />
 }
 
 function StatCard({ label, value, icon }: { label: string; value: string; icon: React.ReactNode }) {
   return (
-    <div className="rounded-md bg-muted/30 border border-border/50 p-2">
-      <div className="flex items-center gap-1 text-muted-foreground mb-1">{icon}<span className="text-[10px]">{label}</span></div>
-      <span className="text-sm font-semibold">{value}</span>
+    <div className="bg-muted/30 rounded-md px-2.5 py-2 flex items-center gap-2">
+      <div className="text-muted-foreground">{icon}</div>
+      <div>
+        <div className="text-xs font-medium">{value}</div>
+        <div className="text-[10px] text-muted-foreground">{label}</div>
+      </div>
     </div>
   )
 }
@@ -866,12 +889,12 @@ function StatCard({ label, value, icon }: { label: string; value: string; icon: 
 function StepItem({ number, title, done, active }: { number: number; title: string; done: boolean; active: boolean }) {
   return (
     <div className="flex items-center gap-3">
-      <div className={`size-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 transition-colors ${
-        done ? 'bg-emerald-500 text-white' : active ? 'bg-amber-500 text-white' : 'bg-muted/60 text-muted-foreground'
+      <div className={`size-6 rounded-full flex items-center justify-center text-[10px] font-medium shrink-0 ${
+        done ? 'bg-emerald-500/20 text-emerald-600' : active ? 'bg-amber-500/20 text-amber-600' : 'bg-muted/60 text-muted-foreground'
       }`}>
-        {done ? <Check className="size-3.5" /> : number}
+        {done ? <Check className="size-3" /> : number}
       </div>
-      <span className={`text-xs ${done ? 'text-emerald-600 line-through' : active ? 'text-amber-600 font-medium' : 'text-muted-foreground'}`}>{title}</span>
+      <span className={`text-xs ${done ? 'text-emerald-600' : active ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>{title}</span>
     </div>
   )
 }

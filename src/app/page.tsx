@@ -53,8 +53,11 @@ function ViewRouter() {
 function AuthGuard() {
   const { data: session, status } = useSession()
 
-  // Loading state
-  if (status === 'loading') {
+  // Only show loading spinner on INITIAL load (no session yet).
+  // During background refetch, status briefly flips to 'loading' but we
+  // still have a valid session — we must NOT unmount the app or the
+  // entire ScriptWorkbench state gets destroyed and remounted.
+  if (status === 'loading' && !session) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
