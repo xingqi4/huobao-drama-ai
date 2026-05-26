@@ -181,11 +181,20 @@ export async function POST(
         .slice(startChapterIdx, endChapterIdx)
         .map((ch) => ch.index)
 
+        // 用原文集数标题，而不是"第N集"或"片段N"
+        const sourceChaptersForTitle = chapters
+          .slice(startChapterIdx, endChapterIdx)
+        const chapterTitles = sourceChaptersForTitle
+          .map((ch) => ch.title)
+          .filter(Boolean)
+        const episodeTitle = decision.coreEvent
+          || (chapterTitles.length > 0 ? chapterTitles.join(' / ') : `第${decision.episodeNumber}集`)
+
         episode = await db.episode.create({
           data: {
             dramaId,
             episodeNumber: decision.episodeNumber,
-            title: decision.coreEvent || `第${decision.episodeNumber}集`,
+            title: episodeTitle,
             sourceChapterIds: JSON.stringify(sourceChapterIds),
             scriptStatus: 'processing',
           },
