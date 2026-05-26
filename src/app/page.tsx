@@ -1,7 +1,6 @@
 'use client'
 
 import { SessionProvider, useSession } from 'next-auth/react'
-import { AnimatePresence, motion } from 'framer-motion'
 import { useAppStore } from '@/lib/store'
 import { AuthView } from '@/components/auth-view'
 import { ProjectListView } from '@/components/project-list'
@@ -13,50 +12,40 @@ import { ScriptWorkbench } from '@/components/script-workbench'
 import { AssetWorkbench } from '@/components/asset-workbench'
 import { Loader2 } from 'lucide-react'
 
-const pageVariants = {
-  initial: { opacity: 0, y: 12 },
-  animate: { opacity: 1, y: 0 },
-  exit: { opacity: 0, y: -12 },
-}
-
-const pageTransition = {
-  duration: 0.25,
-  ease: 'easeInOut' as const,
-}
-
+// ViewRouter: 简单条件渲染，不用 AnimatePresence
+// AnimatePresence mode="wait" 是页面刷新的元凶之一
+// 它会在 key 变化时先把旧组件卸载(退出动画)，再挂载新组件
+// 任何导致 view 短暂变化的操作都会销毁 ScriptWorkbench 的全部 state
 function ViewRouter() {
   const view = useAppStore((s) => s.view)
 
-  return (
-    <AnimatePresence mode="wait">
-      <motion.div
-        key={view}
-        variants={pageVariants}
-        initial="initial"
-        animate="animate"
-        exit="exit"
-        transition={pageTransition}
-        className="flex-1 flex flex-col"
-      >
-        {view === 'projects' && <ProjectListView />}
-        {view === 'project-detail' && <ProjectDetailView />}
-        {view === 'script-workbench' && <ScriptWorkbench />}
-        {view === 'asset-workbench' && <AssetWorkbench />}
-        {view === 'episode-workspace' && <EpisodeWorkspace />}
-        {view === 'settings' && <SettingsView />}
-        {view === 'asset-library' && <AssetLibraryView />}
-      </motion.div>
-    </AnimatePresence>
-  )
+  switch (view) {
+    case 'projects':
+      return <ProjectListView />
+    case 'project-detail':
+      return <ProjectDetailView />
+    case 'script-workbench':
+      return <ScriptWorkbench />
+    case 'asset-workbench':
+      return <AssetWorkbench />
+    case 'episode-workspace':
+      return <EpisodeWorkspace />
+    case 'settings':
+      return <SettingsView />
+    case 'asset-library':
+      return <AssetLibraryView />
+    default:
+      return <ProjectListView />
+  }
 }
 
 function AuthGuard() {
   const { data: session, status } = useSession()
 
-  // Only show loading spinner on INITIAL load (no session yet).
-  // During background refetch, status briefly flips to 'loading' but we
-  // still have a valid session — we must NOT unmount the app or the
-  // entire ScriptWorkbench state gets destroyed and remounted.
+  // 只在初始加载（没有session数据时）显示loading
+  // SessionProvider 每5秒refetch，status会短暂变为'loading'
+  // 如果此时判断 status==='loading' 就显示loading页面，
+  // 会导致整个app卸载再重挂载，所有组件state丢失
   if (status === 'loading' && !session) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -68,12 +57,10 @@ function AuthGuard() {
     )
   }
 
-  // Not authenticated — show auth view
   if (!session) {
     return <AuthView />
   }
 
-  // Authenticated — show app
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <ViewRouter />
@@ -84,10 +71,13 @@ function AuthGuard() {
   )
 }
 
-// SessionProvider with refetch interval to quickly detect login state changes
+// refetchInterval 从 5 秒改为 300 秒（5分钟）
+// 原来的 5 秒太频繁，每5秒触发一次 session refetch，
+// 导致 AuthGuard 重渲染，进而导致 ViewRouter 和
+// ScriptWorkbench 重渲染，是页面内容"刷新"的元凶
 export default function Home() {
   return (
-    <SessionProvider refetchInterval={5} refetchOnWindowFocus={true}>
+    <SessionProvider refetchInterval={300} refetchOnWindowFocus={false}>
       <AuthGuard />
     </SessionProvider>
   )

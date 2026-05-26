@@ -1,7 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAppStore } from '@/lib/store'
 import { api, type Novel } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
@@ -36,7 +35,9 @@ import {
   Eye,
 } from 'lucide-react'
 
-// ── Types ──────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════
+// Types
+// ════════════════════════════════════════════════════════════
 
 interface ChapterInfo {
   index: number
@@ -60,26 +61,39 @@ interface EpisodeStatus {
   sourceChapterIds: string
 }
 
-// ── Main Component ────────────────────────────────────────
+// ════════════════════════════════════════════════════════════
+// Main Component — 完全重写
+// 核心原则：
+//   1. 不用 framer-motion，避免动画引起的卸载/重挂载
+//   2. 所有 callback 用 useRef 稳定引用，防止 useEffect 死循环
+//   3. 只在 selectedDramaId 变化时加载一次数据
+//   4. 用 mountedRef 防止组件卸载后的 setState
+// ════════════════════════════════════════════════════════════
 
 export function ScriptWorkbench() {
-  const navigateToProject = useAppStore((s) => s.navigateToProject)
+  // ── Zustand store (primitive selectors, stable) ──
   const selectedDramaId = useAppStore((s) => s.selectedDramaId)
+  const navigateToProject = useAppStore((s) => s.navigateToProject)
   const currentDrama = useAppStore((s) => s.currentDrama)
-  const { toast } = useToast()
 
-  // ── Core State ──
+  // ── Toast via ref (避免 toast 引用不稳定导致 useEffect 重跑) ──
+  const { toast } = useToast()
+  const toastRef = useRef(toast)
+  useEffect(() => { toastRef.current = toast }, [toast])
+
+  // ── Core Data ──
   const [novel, setNovel] = useState<Novel | null>(null)
   const [chapters, setChapters] = useState<ChapterInfo[]>([])
   const [parsedContent, setParsedContent] = useState<ParsedContent>({})
   const [episodes, setEpisodes] = useState<EpisodeStatus[]>([])
+  const [dataLoaded, setDataLoaded] = useState(false)
 
-  // ── Layout State ──
+  // ── Layout ──
   const [leftCollapsed, setLeftCollapsed] = useState(false)
   const [selectedChapterIdx, setSelectedChapterIdx] = useState<number | null>(null)
   const [activeTab, setActiveTab] = useState('source')
 
-  // ── Generation States ──
+  // ── Generation ──
   const [generatingSkeleton, setGeneratingSkeleton] = useState(false)
   const [generatingStrategy, setGeneratingStrategy] = useState(false)
   const [generatingScripts, setGeneratingScripts] = useState(false)
@@ -87,33 +101,36 @@ export function ScriptWorkbench() {
   const [episodeRangeStart, setEpisodeRangeStart] = useState(1)
   const [episodeRangeEnd, setEpisodeRangeEnd] = useState(10)
 
-  // ── Upload / Parse State ──
+  // ── Upload / Parse ──
   const [uploading, setUploading] = useState(false)
   const [parsing, setParsing] = useState(false)
   const [parseProgress, setParseProgress] = useState({ current: 0, total: 0, message: '' })
   const [reparsing, setReparsing] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // ── Edit State ──
+  // ── Edit ──
   const [skeletonEdit, setSkeletonEdit] = useState('')
   const [strategyEdit, setStrategyEdit] = useState('')
   const [editingSkeleton, setEditingSkeleton] = useState(false)
   const [editingStrategy, setEditingStrategy] = useState(false)
 
-  // ── Episode Script Expand ──
+  // ── Episode Expand ──
   const [expandedEpisode, setExpandedEpisode] = useState<string | null>(null)
   const [episodeScripts, setEpisodeScripts] = useState<Record<string, string>>({})
 
-  // ── Refs for stable callback references ──
-  // We use refs so that useEffect deps don't cause cascading re-renders
-  const toastRef = useRef(toast)
-  useEffect(() => { toastRef.current = toast }, [toast])
-
+  // ── Refs: 稳定的值引用，让 callback 不依赖变化的 state ──
+  const mountedRef = useRef(true)
   const selectedDramaIdRef = useRef(selectedDramaId)
-  useEffect(() => { selectedDramaIdRef.current = selectedDramaId }, [selectedDramaId])
+  const novelIdRef = useRef<string | null>(null)
 
-  const novelRef = useRef(novel)
-  useEffect(() => { novelRef.current = novel }, [novel])
+  useEffect(() => { selectedDramaIdRef.current = selectedDramaId }, [selectedDramaId])
+  useEffect(() => { novelIdRef.current = novel?.id ?? null }, [novel?.id])
+
+  // 组件卸载标记
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
 
   const isGenerating = generatingSkeleton || generatingStrategy || generatingScripts
 
@@ -123,62 +140,76 @@ export function ScriptWorkbench() {
   const totalEpisodes = episodes.length || 0
   const progressPercent = totalEpisodes > 0 ? Math.round((completedEpisodes / totalEpisodes) * 100) : 0
 
-  // ── Data Loading (stable references via refs) ──
+  // ════════════════════════════════════════════════════════════
+  // Data Loading — 从 useRef 读值，callback 引用永远稳定
+  // ════════════════════════════════════════════════════════════
+
   const loadNovelData = useCallback(async () => {
     const dramaId = selectedDramaIdRef.current
     if (!dramaId) return
     try {
-      const novelRes = await fetch(`/api/novels?dramaId=${dramaId}`)
-      if (novelRes.ok) {
-        const novelData = await novelRes.json()
-        if (novelData) {
-          setNovel(novelData)
-          setChapters(novelData.chapters || [])
-          try {
-            const pc = JSON.parse(novelData.parsedContent || '{}')
-            setParsedContent(pc)
-            if (pc.skeleton) setSkeletonEdit(pc.skeleton)
-            if (pc.strategy) setStrategyEdit(pc.strategy)
-          } catch { /* ignore */ }
-        }
-      }
+      const res = await fetch(`/api/novels?dramaId=${dramaId}`)
+      if (!res.ok || !mountedRef.current) return
+      const data = await res.json()
+      if (!data || !mountedRef.current) return
+
+      setNovel(data)
+      setChapters(data.chapters || [])
+      try {
+        const pc = JSON.parse(data.parsedContent || '{}')
+        setParsedContent(pc)
+        if (pc.skeleton) setSkeletonEdit(pc.skeleton)
+        if (pc.strategy) setStrategyEdit(pc.strategy)
+      } catch { /* ignore */ }
     } catch { /* ignore */ }
-  }, []) // No deps — uses refs internally
+  }, [])
 
   const loadScriptStatus = useCallback(async () => {
     const dramaId = selectedDramaIdRef.current
     if (!dramaId) return
     try {
       const status = await api.dramas.getScriptStatus(dramaId)
+      if (!mountedRef.current) return
       setEpisodes(status.episodes)
       if (status.episodes.length > 0) {
         setEpisodeRangeEnd(Math.max(...status.episodes.map((e) => e.episodeNumber)))
       }
     } catch { /* ignore */ }
-  }, []) // No deps — uses refs internally
+  }, [])
 
-  // Initial data load — ONLY depends on selectedDramaId (primitive, stable)
+  // ── Initial data load — 只依赖 selectedDramaId (primitive) ──
+  // 用 dataLoaded ref 防止 React StrictMode 双重调用
+  const initialLoadDoneRef = useRef<string | null>(null)
+
   useEffect(() => {
     if (!selectedDramaId) return
+    // 同一个 dramaId 只加载一次
+    if (initialLoadDoneRef.current === selectedDramaId) return
+    initialLoadDoneRef.current = selectedDramaId
+
     let cancelled = false
     ;(async () => {
       await loadNovelData()
-      if (cancelled) return
+      if (cancelled || !mountedRef.current) return
       await loadScriptStatus()
+      if (!cancelled && mountedRef.current) {
+        setDataLoaded(true)
+      }
     })()
     return () => { cancelled = true }
   }, [selectedDramaId, loadNovelData, loadScriptStatus])
 
-  // Parse progress polling — uses refs to avoid unstable deps
+  // ── Parse progress polling ──
+  // 只在 parsing=true 时启动，用 novelIdRef 避免依赖 novel 对象
   useEffect(() => {
     if (!parsing) return
 
-    const interval = setInterval(async () => {
-      const currentNovel = novelRef.current
-      if (!currentNovel) return
-
+    const poll = async () => {
+      const nid = novelIdRef.current
+      if (!nid || !mountedRef.current) return
       try {
-        const status = await api.novels.parseStatus(currentNovel.id)
+        const status = await api.novels.parseStatus(nid)
+        if (!mountedRef.current) return
         setParseProgress({ current: status.current, total: status.total, message: status.message })
         if (status.status === 'parsed') {
           setParsing(false)
@@ -189,18 +220,23 @@ export function ScriptWorkbench() {
           toastRef.current({ title: '小说解析失败', variant: 'destructive' })
         }
       } catch { /* ignore */ }
-    }, 2000)
+    }
 
+    const interval = setInterval(poll, 3000)
     return () => clearInterval(interval)
-  }, [parsing, loadNovelData]) // Only re-create when `parsing` changes
+  }, [parsing, loadNovelData])
 
-  // ── Handlers ──
+  // ════════════════════════════════════════════════════════════
+  // Handlers
+  // ════════════════════════════════════════════════════════════
 
   const handleFileUpload = async (file: File) => {
-    if (!selectedDramaId) return
+    const dramaId = selectedDramaIdRef.current
+    if (!dramaId) return
     setUploading(true)
     try {
-      const result = await api.novels.uploadForDrama(selectedDramaId, file)
+      const result = await api.novels.uploadForDrama(dramaId, file)
+      if (!mountedRef.current) return
       setNovel(result.novel)
       setChapters(result.chapters || [])
       toastRef.current({ title: '小说上传成功' })
@@ -208,9 +244,11 @@ export function ScriptWorkbench() {
       setParseProgress({ current: 0, total: 1, message: '开始解析...' })
       await api.novels.parse(result.novel.id)
     } catch (err: any) {
-      toastRef.current({ title: '上传失败', description: err.message || '请检查文件格式', variant: 'destructive' })
+      if (mountedRef.current) {
+        toastRef.current({ title: '上传失败', description: err.message || '请检查文件格式', variant: 'destructive' })
+      }
     } finally {
-      setUploading(false)
+      if (mountedRef.current) setUploading(false)
     }
   }
 
@@ -226,10 +264,12 @@ export function ScriptWorkbench() {
   }
 
   const handleReparse = async () => {
-    if (!novel) return
+    const nid = novelIdRef.current
+    if (!nid) return
     setReparsing(true)
     try {
-      const res = await fetch(`/api/novels/${novel.id}/reparse`, { method: 'POST' })
+      const res = await fetch(`/api/novels/${nid}/reparse`, { method: 'POST' })
+      if (!mountedRef.current) return
       if (res.ok) {
         const data = await res.json()
         setChapters(data.chapters || [])
@@ -238,72 +278,92 @@ export function ScriptWorkbench() {
         toastRef.current({ title: '重新解析失败', variant: 'destructive' })
       }
     } catch (err: any) {
-      toastRef.current({ title: '重新解析失败', description: err.message, variant: 'destructive' })
+      if (mountedRef.current) {
+        toastRef.current({ title: '重新解析失败', description: err.message, variant: 'destructive' })
+      }
     } finally {
-      setReparsing(false)
+      if (mountedRef.current) setReparsing(false)
     }
   }
 
   const handleGenerateSkeleton = async () => {
-    if (!selectedDramaId) return
+    const dramaId = selectedDramaIdRef.current
+    if (!dramaId) return
     setGeneratingSkeleton(true)
     setGenerationProgress(30)
     try {
-      const result = await api.dramas.generateSkeleton(selectedDramaId)
+      const result = await api.dramas.generateSkeleton(dramaId)
+      if (!mountedRef.current) return
       setParsedContent((prev) => ({ ...prev, skeleton: result.skeleton, skeletonGeneratedAt: new Date().toISOString() }))
       setSkeletonEdit(result.skeleton)
       setGenerationProgress(100)
       toastRef.current({ title: '故事骨架生成完成' })
       setActiveTab('skeleton')
     } catch (err: any) {
-      toastRef.current({ title: '骨架生成失败', description: err.message, variant: 'destructive' })
+      if (mountedRef.current) {
+        toastRef.current({ title: '骨架生成失败', description: err.message, variant: 'destructive' })
+      }
     } finally {
-      setGeneratingSkeleton(false)
-      setGenerationProgress(0)
+      if (mountedRef.current) {
+        setGeneratingSkeleton(false)
+        setGenerationProgress(0)
+      }
     }
   }
 
   const handleGenerateStrategy = async () => {
-    if (!selectedDramaId) return
+    const dramaId = selectedDramaIdRef.current
+    if (!dramaId) return
     setGeneratingStrategy(true)
     setGenerationProgress(30)
     try {
       const content = editingStrategy ? strategyEdit : parsedContent.skeleton
-      const result = await api.dramas.generateStrategy(selectedDramaId, content || '')
+      const result = await api.dramas.generateStrategy(dramaId, content || '')
+      if (!mountedRef.current) return
       setParsedContent((prev) => ({ ...prev, strategy: result.strategy, strategyGeneratedAt: new Date().toISOString() }))
       setStrategyEdit(result.strategy)
       setGenerationProgress(100)
       toastRef.current({ title: '改编策略生成完成' })
       setActiveTab('strategy')
     } catch (err: any) {
-      toastRef.current({ title: '策略生成失败', description: err.message, variant: 'destructive' })
+      if (mountedRef.current) {
+        toastRef.current({ title: '策略生成失败', description: err.message, variant: 'destructive' })
+      }
     } finally {
-      setGeneratingStrategy(false)
-      setGenerationProgress(0)
+      if (mountedRef.current) {
+        setGeneratingStrategy(false)
+        setGenerationProgress(0)
+      }
     }
   }
 
   const handleGenerateScripts = async () => {
-    if (!selectedDramaId) return
+    const dramaId = selectedDramaIdRef.current
+    if (!dramaId) return
     setGeneratingScripts(true)
     setGenerationProgress(10)
     try {
       const skeleton = editingSkeleton ? skeletonEdit : parsedContent.skeleton
       const strategy = editingStrategy ? strategyEdit : parsedContent.strategy
-      const result = await api.dramas.generateScripts(selectedDramaId, {
+      const result = await api.dramas.generateScripts(dramaId, {
         skeletonContent: skeleton || '',
         strategyContent: strategy || '',
         episodeRange: [episodeRangeStart, episodeRangeEnd],
       })
+      if (!mountedRef.current) return
       setGenerationProgress(100)
       await loadScriptStatus()
       toastRef.current({ title: `剧本生成完成，成功 ${result.totalGenerated} 集` })
       setActiveTab('scripts')
     } catch (err: any) {
-      toastRef.current({ title: '剧本生成失败', description: err.message, variant: 'destructive' })
+      if (mountedRef.current) {
+        toastRef.current({ title: '剧本生成失败', description: err.message, variant: 'destructive' })
+      }
     } finally {
-      setGeneratingScripts(false)
-      setGenerationProgress(0)
+      if (mountedRef.current) {
+        setGeneratingScripts(false)
+        setGenerationProgress(0)
+      }
     }
   }
 
@@ -313,20 +373,26 @@ export function ScriptWorkbench() {
     if (!episodeScripts[episodeId]) {
       try {
         const ep = await api.episodes.get(episodeId)
-        setEpisodeScripts((prev) => ({ ...prev, [episodeId]: ep.scriptContent || ep.rawContent || '暂无剧本内容' }))
+        if (mountedRef.current) {
+          setEpisodeScripts((prev) => ({ ...prev, [episodeId]: ep.scriptContent || ep.rawContent || '暂无剧本内容' }))
+        }
       } catch {
-        setEpisodeScripts((prev) => ({ ...prev, [episodeId]: '加载失败' }))
+        if (mountedRef.current) {
+          setEpisodeScripts((prev) => ({ ...prev, [episodeId]: '加载失败' }))
+        }
       }
     }
   }
 
-  // Chapter click: select chapter + switch to source tab
   const handleChapterClick = (idx: number) => {
     setSelectedChapterIdx(idx)
     setActiveTab('source')
   }
 
-  // ── Render ──
+  // ════════════════════════════════════════════════════════════
+  // Render
+  // ════════════════════════════════════════════════════════════
+
   return (
     <div className="flex flex-col h-screen bg-background">
       {/* ── Top Bar ── */}
@@ -357,7 +423,7 @@ export function ScriptWorkbench() {
       {/* ── Main Three-Column Layout ── */}
       <div className="flex flex-1 overflow-hidden">
 
-        {/* ══════════ Left Column: Chapter Nav + Gen Config ══════════ */}
+        {/* ═══ Left Column: Chapter Nav + Gen Config ═══ */}
         <div className={`shrink-0 border-r border-border flex flex-col transition-all duration-200 ${leftCollapsed ? 'w-10' : 'w-72'} hidden lg:flex`}>
           {leftCollapsed ? (
             <div className="flex flex-col items-center py-2">
@@ -425,7 +491,10 @@ export function ScriptWorkbench() {
                   </div>
                 ) : (
                   <div className="p-4" onDrop={handleDrop} onDragOver={(e) => e.preventDefault()}>
-                    <div className="border-2 border-dashed border-border/60 rounded-lg p-6 text-center hover:border-primary/40 transition-colors cursor-pointer" onClick={() => fileInputRef.current?.click()}>
+                    <div
+                      className="border-2 border-dashed border-border/60 rounded-lg p-6 text-center hover:border-primary/40 transition-colors cursor-pointer"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
                       <FileUp className="size-8 mx-auto text-muted-foreground/40 mb-2" />
                       <p className="text-xs font-medium">上传小说文件</p>
                       <p className="text-[10px] text-muted-foreground mt-1">支持 .txt 和 .docx 格式</p>
@@ -458,7 +527,7 @@ export function ScriptWorkbench() {
                     {generatingStrategy ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
                     生成改编策略
                   </Button>
-                  <Button size="sm" className="w-full h-7 text-xs gap-1.5 amber-glow" onClick={handleGenerateScripts} disabled={!parsedContent.strategy || generatingScripts || isGenerating}>
+                  <Button size="sm" className="w-full h-7 text-xs gap-1.5" onClick={handleGenerateScripts} disabled={!parsedContent.strategy || generatingScripts || isGenerating}>
                     {generatingScripts ? <Loader2 className="size-3 animate-spin" /> : <Play className="size-3" />}
                     批量生成剧本
                   </Button>
@@ -469,7 +538,7 @@ export function ScriptWorkbench() {
           )}
         </div>
 
-        {/* ══════════ Mobile Left Drawer ══════════ */}
+        {/* ═══ Mobile Left Drawer ═══ */}
         {!leftCollapsed && (
           <div className="lg:hidden fixed inset-0 z-50 flex">
             <div className="flex-1 bg-black/50" onClick={() => setLeftCollapsed(true)} />
@@ -485,7 +554,7 @@ export function ScriptWorkbench() {
                   <div className="p-2 space-y-0.5">
                     {chapters.map((ch, idx) => (
                       <button
-                        key={`${ch.index}-${idx}`}
+                        key={`m-${ch.index}-${idx}`}
                         className={`w-full text-left px-2 py-1.5 rounded-md text-xs flex items-center gap-2 transition-colors ${
                           selectedChapterIdx === idx ? 'bg-amber-500/10 text-amber-700' : 'hover:bg-muted/50 text-foreground'
                         }`}
@@ -515,7 +584,7 @@ export function ScriptWorkbench() {
                   {generatingStrategy ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
                   生成改编策略
                 </Button>
-                <Button size="sm" className="w-full h-7 text-xs gap-1.5 amber-glow" onClick={handleGenerateScripts} disabled={!parsedContent.strategy || isGenerating}>
+                <Button size="sm" className="w-full h-7 text-xs gap-1.5" onClick={handleGenerateScripts} disabled={!parsedContent.strategy || isGenerating}>
                   {generatingScripts ? <Loader2 className="size-3 animate-spin" /> : <Play className="size-3" />}
                   批量生成剧本
                 </Button>
@@ -524,7 +593,7 @@ export function ScriptWorkbench() {
           </div>
         )}
 
-        {/* ══════════ Center Column: 4 Tabs ══════════ */}
+        {/* ═══ Center Column: 4 Tabs ═══ */}
         <div className="flex-1 flex flex-col overflow-hidden">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1 overflow-hidden">
             <div className="border-b border-border px-4 pt-2">
@@ -563,24 +632,14 @@ export function ScriptWorkbench() {
                         </Badge>
                         <h2 className="text-sm font-semibold">{selectedChapter.title}</h2>
                       </div>
-                      <div className="prose prose-sm dark:prose-invert max-w-none">
-                        <pre className="whitespace-pre-wrap text-sm leading-relaxed bg-muted/30 rounded-lg p-4 border border-border/50 max-h-[calc(100vh-200px)] overflow-y-auto">
-                          {selectedChapter.content}
-                        </pre>
-                      </div>
+                      <pre className="whitespace-pre-wrap text-sm leading-relaxed bg-muted/30 rounded-lg p-4 border border-border/50 max-h-[calc(100vh-200px)] overflow-y-auto">
+                        {selectedChapter.content}
+                      </pre>
                     </div>
                   ) : chapters.length > 0 ? (
-                    <EmptyState
-                      icon={<Eye className="size-10 text-amber-500/40" />}
-                      title="章节原文"
-                      description="在左侧选择一个章节，在此查看原文内容"
-                    />
+                    <EmptyState icon={<Eye className="size-10 text-amber-500/40" />} title="章节原文" description="在左侧选择一个章节，在此查看原文内容" />
                   ) : novel ? (
-                    <EmptyState
-                      icon={<Eye className="size-10 text-amber-500/40" />}
-                      title="章节原文"
-                      description="小说正在解析中，解析完成后即可查看章节内容"
-                    />
+                    <EmptyState icon={<Eye className="size-10 text-amber-500/40" />} title="章节原文" description="小说正在解析中，解析完成后即可查看章节内容" />
                   ) : (
                     <EmptyState
                       icon={<FileUp className="size-10 text-amber-500/40" />}
@@ -696,7 +755,10 @@ export function ScriptWorkbench() {
                       </div>
                       {episodes.map((ep) => (
                         <Card key={ep.id} className="border-border/50 py-0 gap-0">
-                          <CardHeader className="py-3 px-4 cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => handleViewEpisodeScript(ep.id)}>
+                          <CardHeader
+                            className="py-3 px-4 cursor-pointer hover:bg-muted/30 transition-colors"
+                            onClick={() => handleViewEpisodeScript(ep.id)}
+                          >
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-3">
                                 <div className="size-8 rounded-md bg-primary/10 flex items-center justify-center">
@@ -707,24 +769,21 @@ export function ScriptWorkbench() {
                                   <div className="flex items-center gap-2 mt-0.5"><StatusBadge status={ep.scriptStatus} /></div>
                                 </div>
                               </div>
-                              <ChevronDown className={`size-4 text-muted-foreground transition-transform ${expandedEpisode === ep.id ? 'rotate-180' : ''}`} />
+                              <ChevronDown className={`size-4 text-muted-foreground transition-transform duration-200 ${expandedEpisode === ep.id ? 'rotate-180' : ''}`} />
                             </div>
                           </CardHeader>
-                          <AnimatePresence>
-                            {expandedEpisode === ep.id && (
-                              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }}>
-                                <CardContent className="pt-0 px-4 pb-4">
-                                  <div className="rounded-lg bg-muted/30 border border-border/50 p-3">
-                                    {episodeScripts[ep.id] ? (
-                                      <pre className="whitespace-pre-wrap text-xs leading-relaxed max-h-80 overflow-y-auto">{episodeScripts[ep.id]}</pre>
-                                    ) : (
-                                      <div className="flex items-center justify-center py-4"><Loader2 className="size-4 animate-spin text-muted-foreground" /></div>
-                                    )}
-                                  </div>
-                                </CardContent>
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
+                          {/* 不用 AnimatePresence/motion.div，用纯 CSS 过渡 */}
+                          {expandedEpisode === ep.id && (
+                            <CardContent className="pt-0 px-4 pb-4">
+                              <div className="rounded-lg bg-muted/30 border border-border/50 p-3">
+                                {episodeScripts[ep.id] ? (
+                                  <pre className="whitespace-pre-wrap text-xs leading-relaxed max-h-80 overflow-y-auto">{episodeScripts[ep.id]}</pre>
+                                ) : (
+                                  <div className="flex items-center justify-center py-4"><Loader2 className="size-4 animate-spin text-muted-foreground" /></div>
+                                )}
+                              </div>
+                            </CardContent>
+                          )}
                         </Card>
                       ))}
                     </div>
@@ -744,7 +803,7 @@ export function ScriptWorkbench() {
           </Tabs>
         </div>
 
-        {/* ══════════ Right Column: Progress & Stats ══════════ */}
+        {/* ═══ Right Column: Progress & Stats ═══ */}
         <div className="hidden lg:flex shrink-0 w-80 border-l border-border flex-col overflow-hidden">
           {/* Progress ring */}
           <div className="p-4 border-b border-border">
@@ -817,16 +876,11 @@ export function ScriptWorkbench() {
   )
 }
 
-// ── Sub-components ──────────────────────────────────────
+// ════════════════════════════════════════════════════════════
+// Sub-components (不用 framer-motion)
+// ════════════════════════════════════════════════════════════
 
-function EmptyState({
-  icon,
-  title,
-  description,
-  actionLabel,
-  onAction,
-  disabled,
-}: {
+function EmptyState({ icon, title, description, actionLabel, onAction, disabled }: {
   icon: React.ReactNode
   title: string
   description: string
@@ -857,11 +911,7 @@ function StatusBadge({ status }: { status: string }) {
     pending: { label: '待生成', className: 'text-muted-foreground border-border' },
   }
   const c = config[status] || config.pending
-  return (
-    <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${c.className}`}>
-      {c.label}
-    </Badge>
-  )
+  return <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${c.className}`}>{c.label}</Badge>
 }
 
 function StatusDot({ status }: { status: string }) {
