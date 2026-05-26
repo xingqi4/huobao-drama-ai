@@ -508,3 +508,31 @@ Stage Summary:
 - 2 files changed, 1308 insertions, 27 deletions
 - Key files: src/components/asset-workbench.tsx (full replacement), src/lib/api.ts (batchGenerateImages method)
 - Build passes successfully
+
+---
+Task ID: 1
+Agent: main
+Task: 剧本创作工作台前端代码重写
+
+Work Log:
+- 读取并分析了现有 script-workbench.tsx (1382行)、novel-parser.ts、api.ts、store.ts、schema.prisma 等核心文件
+- 发现 splitChapters() 正则只覆盖5种模式，回退时产生"片段N"标题
+- 修复 splitChapters(): 从5→7种正则模式，覆盖第X章/回/节/卷/集/部/篇、卷X、Chapter X、数字编号、【标题】
+- 回退分割改为提取首行作为标题（而非"片段N"）
+- 从头重写 script-workbench.tsx: 407行新代码(原802行→减少50%)
+  - 新增"章节原文"Tab (Eye图标)
+  - 左栏章节点击→中栏联动显示章节原文+自动切到source tab
+  - 4Tab布局: 章节原文|故事骨架|改编策略|剧本输出
+  - 选中章节amber色高亮
+  - 新增reparse按钮(RotateCcw图标)
+- 创建 reparse API: POST /api/novels/[id]/reparse
+  - 从DB已有章节数据重建原文→用改进后的splitChapters重新分割→更新DB
+- TypeScript检查: 修改文件零报错
+- Next.js build: 通过，reparse路由成功注册
+- git commit + push to fix/script-workbench-rewrite
+
+Stage Summary:
+- 3 files changed, 407 insertions(+), 802 deletions(-)
+- Branch: fix/script-workbench-rewrite pushed
+- Build: passing
+- PR link: https://github.com/dav-niu474/huobao-drama-ai/pull/new/fix/script-workbench-rewrite
