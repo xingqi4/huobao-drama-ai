@@ -533,7 +533,7 @@ export function AssetWorkbench() {
   // ── Render ──
 
   return (
-    <div className="flex flex-col h-screen bg-background">
+    <div className="flex flex-col h-full bg-background">
       {/* 顶部导航 + 面包屑 */}
       <div className="h-12 border-b border-border flex items-center px-4 gap-3 shrink-0">
         {/* Breadcrumb: 项目名 > 剧本生成工作台 > 素材管理工作台 */}

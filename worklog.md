@@ -536,3 +536,24 @@ Stage Summary:
 - Branch: fix/script-workbench-rewrite pushed
 - Build: passing
 - PR link: https://github.com/dav-niu474/huobao-drama-ai/pull/new/fix/script-workbench-rewrite
+
+---
+Task ID: fix-overlap-v3
+Agent: main
+Task: 修复剧本工作台"两个页面重叠"的根本bug
+
+Work Log:
+- 深入分析用户描述："进去后是一个页面，几秒钟刷新出我想要的页面，然后两个页面就重叠在一起了"
+- 对比原始代码(d980ae5)和当前代码的差异
+- 发现3个根因：
+  1. ScriptWorkbench用h-screen(100vh)，但父容器min-h-screen + footer导致总高>100vh，页面可滚动，内容重叠
+  2. SessionProvider refetchInterval导致session状态短暂变化，AuthGuard重渲染导致ViewRouter整个卸载重挂载
+  3. 工作台视图不需要footer，footer导致布局异常
+
+Stage Summary:
+- page.tsx: 新增isFullscreenView判断，工作台视图用h-screen overflow-hidden（无footer），普通视图用min-h-screen+footer
+- page.tsx: refetchInterval从300改为0，彻底避免session refetch导致组件重挂载
+- script-workbench.tsx: h-screen改为h-full，配合父容器正确计算高度
+- asset-workbench.tsx: 同上h-screen→h-full
+- episode-workspace.tsx: 同上h-screen→h-full
+- 构建验证通过，未推送代码

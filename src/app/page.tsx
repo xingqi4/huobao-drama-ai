@@ -12,10 +12,19 @@ import { ScriptWorkbench } from '@/components/script-workbench'
 import { AssetWorkbench } from '@/components/asset-workbench'
 import { Loader2 } from 'lucide-react'
 
-// ViewRouter: 简单条件渲染，不用 AnimatePresence
-// AnimatePresence mode="wait" 是页面刷新的元凶之一
-// 它会在 key 变化时先把旧组件卸载(退出动画)，再挂载新组件
-// 任何导致 view 短暂变化的操作都会销毁 ScriptWorkbench 的全部 state
+// ════════════════════════════════════════════════════════════
+// ViewRouter — 关键修复：
+// 1. 不用 AnimatePresence（它导致组件卸载重挂载，丢失所有state）
+// 2. 用 switch/case 确保同时只渲染一个组件
+// 3. 工作台类视图（script-workbench/asset-workbench/episode-workspace）
+//    不需要 footer，直接占满整个视口
+// ════════════════════════════════════════════════════════════
+
+// 判断是否为全屏工作台视图（不需要footer）
+function isFullscreenView(view: string): boolean {
+  return view === 'script-workbench' || view === 'asset-workbench' || view === 'episode-workspace'
+}
+
 function ViewRouter() {
   const view = useAppStore((s) => s.view)
 
@@ -41,14 +50,15 @@ function ViewRouter() {
 
 function AuthGuard() {
   const { data: session, status } = useSession()
+  const view = useAppStore((s) => s.view)
 
-  // 只在初始加载（没有session数据时）显示loading
-  // SessionProvider 每5秒refetch，status会短暂变为'loading'
-  // 如果此时判断 status==='loading' 就显示loading页面，
-  // 会导致整个app卸载再重挂载，所有组件state丢失
+  // 关键修复：只在 初始加载 且 没有session数据 时显示loading
+  // 绝对不能在 session refetch 期间显示 loading，
+  // 否则整个 ViewRouter 会被卸载，所有组件 state 丢失，
+  // 重新挂载时就会出现"两个页面重叠"的bug
   if (status === 'loading' && !session) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="size-8 animate-spin text-primary" />
           <span className="text-sm text-muted-foreground">加载中...</span>
@@ -61,6 +71,17 @@ function AuthGuard() {
     return <AuthView />
   }
 
+  // 全屏工作台视图：不用 min-h-screen + footer，直接 h-screen 占满视口
+  // 这样工作台组件的 h-full 才能正确计算高度，不会出现重叠
+  if (isFullscreenView(view)) {
+    return (
+      <div className="h-screen overflow-hidden bg-background">
+        <ViewRouter />
+      </div>
+    )
+  }
+
+  // 普通视图：带 footer 的滚动布局
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <ViewRouter />
@@ -71,13 +92,12 @@ function AuthGuard() {
   )
 }
 
-// refetchInterval 从 5 秒改为 300 秒（5分钟）
-// 原来的 5 秒太频繁，每5秒触发一次 session refetch，
-// 导致 AuthGuard 重渲染，进而导致 ViewRouter 和
-// ScriptWorkbench 重渲染，是页面内容"刷新"的元凶
+// refetchInterval=0 表示不自动 refetch（只在需要时手动刷新）
+// 之前的 5 秒/300 秒 refetch 都可能导致 session 状态短暂变化，
+// 触发 AuthGuard 重渲染，是"页面刷新/重叠"的元凶之一
 export default function Home() {
   return (
-    <SessionProvider refetchInterval={300} refetchOnWindowFocus={false}>
+    <SessionProvider refetchInterval={0} refetchOnWindowFocus={false}>
       <AuthGuard />
     </SessionProvider>
   )

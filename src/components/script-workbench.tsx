@@ -394,7 +394,7 @@ export function ScriptWorkbench() {
   // ════════════════════════════════════════════════════════════
 
   return (
-    <div className="flex flex-col h-screen bg-background">
+    <div className="flex flex-col h-full bg-background">
       {/* ── Top Bar ── */}
       <div className="h-12 border-b border-border flex items-center px-4 gap-3 shrink-0">
         <button
